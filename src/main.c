@@ -32,6 +32,7 @@
 #include "board.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "i2c.h"
 
 /*****************************************************************************
  * Private types/enumerations/variables
@@ -50,6 +51,7 @@ static void prvSetupHardware(void)
 {
 	SystemCoreClockUpdate();
 	Board_Init();
+	Init_I2C();
 }
 
 /* LED0 toggle thread */

@@ -1,10 +1,24 @@
-/**
+/*
+ * LSM9DS1.h
+ *
  * Mappings and helper functions for the
  * STMicroelectronics LSM9DS1 sensor.
+ *
+ *  Created on: 26 Jan 2020
+ *      Author: TDP4 Team 3
  */
 
 #ifndef LSM9DS1_H
 #define LSM9DS1_H
+
+#include "chip.h"
+
+#define LSM9DS1_AG_ADDR 0x6B
+#define LSM9DS1_M_ADDR  0x1E
+
+typedef struct axes_state {
+	int16_t x, y, z;
+} axes_state_t;
 
 /****************************************
  * Accelerometer (XL) and gyroscope (G) *
@@ -13,9 +27,9 @@
 
 // Registers with default values
 uint8_t LSM9DS1_AG[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x68,    // 0x0X
-		                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, 0x38, // 0x1X
-                        0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,       // 0x2X
-                        0, 0, 0, 0, 0, 0, 0, 0};                              // 0x3X
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, 0x38, // 0x1X
+		0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,       // 0x2X
+		0, 0, 0, 0, 0, 0, 0, 0};                              // 0x3X
 
 #define ACT_THS				0x04 // Activity threshold register
 #define ACT_DUR				0x05 // Inactivity duration register
@@ -220,8 +234,8 @@ int LSM9DS1_Disable_AG_HPF();
 /**
  * Set angular rate sensor sign and orientation register.
  * @param int Pitch axis (X) angular rate sign (0: positive sign; 1: negative sign)
- * @param int Pitch axis (Y) angular rate sign (0: positive sign; 1: negative sign)
- * @param int Pitch axis (Z) angular rate sign (0: positive sign; 1: negative sign)
+ * @param int Roll axis (Y) angular rate sign (0: positive sign; 1: negative sign)
+ * @param int Yaw axis (Z) angular rate sign (0: positive sign; 1: negative sign)
  * @param uint8_t (3-bit) Directional user orientation selection
  */
 int LSM9DS1_Set_G_Orientation(int, int, int, uint8_t);
@@ -249,6 +263,12 @@ int16_t LSM9DS1_Get_AG_Temperature();
 
 #define OUT_Z_L_G			0x1C
 #define OUT_Z_H_G			0x1D
+
+typedef struct g_state {
+	int16_t pitch, roll, yaw;
+} g_state_t;
+
+g_state_t LSM9DS1_Get_G_Output();
 
 // G+XL control register
 #define CTRL_REG4			0x1E
@@ -376,6 +396,8 @@ int LSM9DS1_Reset_FIFO();
 #define OUT_Z_L_XL			0x2C
 #define OUT_Z_H_XL			0x2D
 
+axes_state_t LSM9DS1_Get_XL_Output();
+
 #define FIFO_CTRL			0x2E /* FIFO control register */
 
 typedef enum fifo_mode {
@@ -398,9 +420,9 @@ int LSM9DS1_Set_AG_FIFO(FIFO_MODE_T, uint8_t);
 /* Angular rate sensor interrupt generator configuration register. */
 #define INT_GEN_CFG_G		0x30
 
- /* Angular rate sensor interrupt generator threshold registers.
-  * The value is expressed as a 15-bit word in two’s complement.
-  */
+/* Angular rate sensor interrupt generator threshold registers.
+ * The value is expressed as a 15-bit word in two’s complement.
+ */
 #define INT_GEN_THS_XH_G	0x31
 #define INT_GEN_THS_XL_G	0x32
 
@@ -420,9 +442,9 @@ int LSM9DS1_Set_AG_FIFO(FIFO_MODE_T, uint8_t);
 
 // Registers with default values
 uint8_t LSM9DS1_M[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, // 0x0X
-		               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,    // 0x1X
-                       0x10, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x2X
-                       8, 0, 0, 0};                                       // 0x3X
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,    // 0x1X
+		0x10, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x2X
+		8, 0, 0, 0};                                       // 0x3X
 
 /**
  * These registers are 16-bit registers and represent the X/Y/Z offsets used
@@ -482,10 +504,10 @@ int LSM9DS1_Set_M_Reg1(int, OPERATIVE_MODE_T, M_ODR_T, int, int);
 
 // Magnetometer full-scale (gauss)
 typedef enum m_fs {
-	M_FS_4,
-	M_FS_8,
-	M_FS_12,
-	M_FS_16
+	M_FS_4,  // ±4g
+	M_FS_8,  // ±8g
+	M_FS_12, // ±12g
+	M_FS_16  // ±16g
 } M_FS_T;
 
 /**
@@ -523,17 +545,27 @@ int LSM9DS1_Set_M_Operating_Mode(M_OPERATING_MODE_T);
  * @param OPERATIVE_MODE Z-axis operative mode selection
  * @param int Big/Little Endian selection (default: 0)
  */
-int LSM9DS1_Set_M_Reg4(OPERATIVE_MODE, int);
-int LSM9DS1_Set_M_Operative_Mode(OPERATIVE_MODE);
+int LSM9DS1_Set_M_Reg4(OPERATIVE_MODE_T, int);
+int LSM9DS1_Set_M_Operative_Mode(OPERATIVE_MODE_T);
 
 #define CTRL_REG5_M			0x24
 #define STATUS_REG_M		0x27
+
+/*
+ * Magnetometer output words in 2's complement.
+ */
+
 #define OUT_X_L_M			0x28
 #define OUT_X_H_M			0x29
+
 #define OUT_Y_L_M			0x2A
 #define OUT_Y_H_M			0x2B
+
 #define OUT_Z_L_M			0x2C
 #define OUT_Z_H_M			0x2D
+
+axes_state_t LSM9DS1_Get_M_Output();
+
 #define INT_CFG_M			0x30
 #define INT_SRC_M			0x31
 #define INT_THS_L_M			0x32
