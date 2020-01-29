@@ -9,6 +9,14 @@
 
 static uint8_t tx_buffer[128];
 
+void I2C_IRQHandler() {
+	if (Chip_I2C_IsMasterActive(I2C0)) {
+		Chip_I2C_MasterStateHandler(I2C0);
+	} else {
+		Chip_I2C_SlaveStateHandler(I2C0);
+	}
+}
+
 void Init_I2C() {
 	// Set up I2C I/O
 	Chip_SYSCTL_PeriphReset(RESET_I2C0);
@@ -18,6 +26,9 @@ void Init_I2C() {
 	// Initialise I2C protocol
 	Chip_I2C_Init(I2C0);
 	Chip_I2C_SetClockRate(I2C0, DEFAULT_CLK);
+
+	Chip_I2C_SetMasterEventHandler(I2C0, Chip_I2C_EventHandler);
+	NVIC_EnableIRQ(I2C0_IRQn);
 }
 
 void Deinit_I2C() {

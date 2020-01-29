@@ -12,9 +12,14 @@
 #define LSM9DS1_H
 
 #include "chip.h"
+#include "i2c.h"
 
 #define LSM9DS1_AG_ADDR 0x6B
 #define LSM9DS1_M_ADDR  0x1E
+
+int LSM9DS1_Write_AG_Register(byte_t, byte_t);
+
+byte_t LSM9DS1_Read_Register(byte_t, byte_t);
 
 typedef struct axes_state {
 	int16_t x, y, z;
@@ -26,7 +31,7 @@ typedef struct axes_state {
  ****************************************/
 
 // Registers with default values
-uint8_t LSM9DS1_AG[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x68,    // 0x0X
+static uint8_t LSM9DS1_AG[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x68,    // 0x0X
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, 0x38, // 0x1X
 		0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,       // 0x2X
 		0, 0, 0, 0, 0, 0, 0, 0};                              // 0x3X
@@ -268,7 +273,7 @@ typedef struct g_state {
 	int16_t pitch, roll, yaw;
 } g_state_t;
 
-g_state_t LSM9DS1_Get_G_Output();
+g_state_t *LSM9DS1_Get_G_Output();
 
 // G+XL control register
 #define CTRL_REG4			0x1E
@@ -396,7 +401,7 @@ int LSM9DS1_Reset_FIFO();
 #define OUT_Z_L_XL			0x2C
 #define OUT_Z_H_XL			0x2D
 
-axes_state_t LSM9DS1_Get_XL_Output();
+axes_state_t *LSM9DS1_Get_XL_Output();
 
 #define FIFO_CTRL			0x2E /* FIFO control register */
 
@@ -441,7 +446,7 @@ int LSM9DS1_Set_AG_FIFO(FIFO_MODE_T, uint8_t);
 
 
 // Registers with default values
-uint8_t LSM9DS1_M[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, // 0x0X
+static uint8_t LSM9DS1_M[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, // 0x0X
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,    // 0x1X
 		0x10, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x2X
 		8, 0, 0, 0};                                       // 0x3X
@@ -564,7 +569,7 @@ int LSM9DS1_Set_M_Operative_Mode(OPERATIVE_MODE_T);
 #define OUT_Z_L_M			0x2C
 #define OUT_Z_H_M			0x2D
 
-axes_state_t LSM9DS1_Get_M_Output();
+axes_state_t *LSM9DS1_Get_M_Output();
 
 #define INT_CFG_M			0x30
 #define INT_SRC_M			0x31

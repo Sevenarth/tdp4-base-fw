@@ -1,42 +1,85 @@
-/*
- * @brief FreeRTOS Blinky example
- *
- * @note
- * Copyright(C) NXP Semiconductors, 2012
- * All rights reserved.
- *
- * @par
- * Software that is described herein is for illustrative purposes only
- * which provides customers with programming information regarding the
- * LPC products.  This software is supplied "AS IS" without any warranties of
- * any kind, and NXP Semiconductors and its licensor disclaim any and
- * all warranties, express or implied, including all implied warranties of
- * merchantability, fitness for a particular purpose and non-infringement of
- * intellectual property rights.  NXP Semiconductors assumes no responsibility
- * or liability for the use of the software, conveys no license or rights under any
- * patent, copyright, mask work right, or any other intellectual property rights in
- * or to any products. NXP Semiconductors reserves the right to make changes
- * in the software without notification. NXP Semiconductors also makes no
- * representation or warranty that such application will be suitable for the
- * specified use without further testing or modification.
- *
- * @par
- * Permission to use, copy, modify, and distribute this software and its
- * documentation is hereby granted, under NXP Semiconductors' and its
- * licensor's relevant copyrights in the software, without fee, provided that it
- * is used in conjunction with NXP Semiconductors microcontrollers.  This
- * copyright, permission, and disclaimer notice must appear in all copies of
- * this code.
- */
-
 #include "board.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "i2c.h"
+#include <stdlib.h>
+#include "LSM9DS1.h"
 
 /*****************************************************************************
  * Private types/enumerations/variables
  ****************************************************************************/
+
+#ifdef DEBUG_ENABLE
+static const char menu[] =
+	"**************** LSM9DS1_AG Demo Menu ****************\r\n"
+	"\t0: Exit Demo\r\n"
+	"\t1: Read output\r\n"
+	"\t2: Read register\r\n"
+	"\t3: Write register\r\n";
+#endif
+
+/* Get an integer input from UART */
+static int con_get_input(const char *str)
+{
+#ifdef DEBUG_ENABLE
+	int input_valid = 0;
+	int x;
+	char ch[16], *ptr;
+	int i = 0;
+
+	while (!input_valid) {
+		DEBUGOUT("%s", str);
+		while (1) {
+			x = DEBUGIN();
+			if (x == EOF) {
+				continue;
+			}
+			if (i >= sizeof(ch) - 2) {
+				break;
+			}
+			if (((x == '\r') || (x == '\n')) && i) {
+				DEBUGOUT("\r\n");
+				break;
+			}
+			if (x == '\b') {
+				if (i) {
+					DEBUGOUT("\033[1D \033[1D");
+					i--;
+				}
+				continue;
+			}
+			DEBUGOUT("%c", x);
+			ch[i++] = x;
+		}
+		ch[i] = 0;
+		i = strtol(ch, &ptr, 16);
+		if (*ptr) {
+			i = 0;
+			DEBUGOUT("Invalid input. Retry!\r\n");
+			continue;
+		}
+		input_valid = 1;
+	}
+	return i;
+#else
+	static int sind = -1;
+	static uint8_t val[] = {5, I2C_SLAVE_IOX_ADDR, 1, 0};
+	if (sind >= sizeof(val)) {
+		sind = -1;
+	}
+	while (sind < 0 && (tick_cnt & 0x7F)) {}
+	if (sind < 0) {
+		sind = 0;
+		val[3] = !val[3];
+		tick_cnt++;
+	}
+	return val[sind++];
+#endif
+}
+
+static int i2c_menu(void)
+{
+	DEBUGOUT(menu);
+	return con_get_input("\r\nSelect an option [0 - 6] :");
+}
+
 
 /*****************************************************************************
  * Public types/enumerations/variables
@@ -54,39 +97,6 @@ static void prvSetupHardware(void)
 	Init_I2C();
 }
 
-/* LED0 toggle thread */
-static void vLEDTask0(void *pvParameters) {
-	bool LedState = false;
-	while (1) {
-		Chip_GPIO_SetPinState(LPC_GPIO, 0, 7, LedState);
-		LedState = (bool) !LedState;
-
-		vTaskDelay(configTICK_RATE_HZ/2);
-	}
-}
-
-/* LED1 toggle thread */
-static void vLEDTask1(void *pvParameters) {
-	bool LedState = false;
-	while (1) {
-		Chip_GPIO_SetPinState(LPC_GPIO, 0, 8, LedState);
-		LedState = (bool) !LedState;
-
-		vTaskDelay(configTICK_RATE_HZ*2);
-	}
-}
-
-/* LED2 toggle thread */
-static void vLEDTask2(void *pvParameters) {
-	bool LedState = false;
-	while (1) {
-		Chip_GPIO_SetPinState(LPC_GPIO, 0, 9, LedState);
-		LedState = (bool) !LedState;
-
-		vTaskDelay(configTICK_RATE_HZ);
-	}
-}
-
 /*****************************************************************************
  * Public functions
  ****************************************************************************/
@@ -97,26 +107,76 @@ static void vLEDTask2(void *pvParameters) {
  */
 int main(void)
 {
+	int tmp;
+	int xflag = 0;
+
 	prvSetupHardware();
 
-	/* LED1 toggle thread */
-	xTaskCreate(vLEDTask1, (signed char *) "vTaskLed1",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
+	LSM9DS1_Enable_AG_FIFO();
+	LSM9DS1_Set_AG_Interrupt1(INT1_FSS5);
+	LSM9DS1_Set_AG_Reg1(G_ODR_952, G_FS_2000, G_BW_0);
+	LSM9DS1_Set_AG_Reg6(XL_ODR_952, XL_FS_16, 0, 0);
 
-	/* LED2 toggle thread */
-	xTaskCreate(vLEDTask2, (signed char *) "vTaskLed2",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
 
-	/* LED0 toggle thread */
-	xTaskCreate(vLEDTask0, (signed char *) "vTaskLed0",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
+	while (!xflag) {
+		switch (i2c_menu()) {
+		case 0:
+			xflag = 1;
+			DEBUGOUT("End of LSM9DS1 Demo! Bye!\r\n");
+			break;
 
-	/* Start the scheduler */
-	vTaskStartScheduler();
+		case 1:
+		{
+			g_state_t *g_out = LSM9DS1_Get_G_Output();
+			axes_state_t *xl_out = LSM9DS1_Get_XL_Output();
+			DEBUGOUT("OUTPUTS\r\n\r\n");
+			DEBUGOUT("Gyroscope\r\n");
+			DEBUGOUT("Pitch: %d\tRoll: %d\tYaw: %d\r\n\r\n", g_out->pitch, g_out->roll, g_out->yaw);
+			DEBUGOUT("Accelerometer\r\n");
+			DEBUGOUT("X: %d\tY %d\tZ %d\r\n\r\n", xl_out->x, xl_out->y, xl_out->z);
+
+			free(g_out);
+			free(xl_out);
+
+			byte_t fifo_status = LSM9DS1_Read_Register(LSM9DS1_AG_ADDR, FIFO_SRC);
+			DEBUGOUT("FIFO STATUS\r\n");
+
+			if(fifo_status & 0x80)
+				DEBUGOUT("FIFO is at or above threshold\r\n");
+			else
+				DEBUGOUT("FIFO is below threshold\r\n");
+
+			if(fifo_status & 0x40)
+				DEBUGOUT("FIFO is overrunning\r\n");
+			else
+				DEBUGOUT("FIFO is NOT overrunning\r\n");
+
+			DEBUGOUT("Unread FIFO samples: %u\r\n\r\n", fifo_status & 0x1F);
+
+			break;
+		}
+		case 2:
+			tmp = con_get_input("Register address: ");
+			byte_t value = LSM9DS1_Read_Register(LSM9DS1_AG_ADDR, tmp);
+			DEBUGOUT("Register value: %x\r\n\r\n", value);
+			break;
+
+		case 3:
+			tmp = con_get_input("Register address: ");
+			int val = con_get_input("Register value: ");
+			if(LSM9DS1_Write_AG_Register(tmp, val)) {
+				DEBUGOUT("Success!\r\n");
+			} else {
+				DEBUGOUT("Failed!\r\n");
+			}
+			break;
+
+		default:
+			DEBUGOUT("Input Invalid! Try Again.\r\n");
+		}
+	}
+	Deinit_I2C();
 
 	/* Should never arrive here */
-	return 1;
+	return 0;
 }

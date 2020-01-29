@@ -6,10 +6,21 @@
  */
 
 #include "LSM9DS1.h"
-#include "i2c.h"
+#include <stdlib.h>
+
+byte_t LSM9DS1_Read_Register(byte_t addr, byte_t reg) {
+	byte_t bytes[] = {0};
+	byte_str_t byteStr = {1, bytes};
+	if(I2C_Cmd_Read_Bytes(addr, reg, &byteStr)) {
+		return byteStr.bytes[0];
+	}
+
+	return 0;
+}
 
 int LSM9DS1_Write_AG_Register(byte_t addr, byte_t value) {
-	byte_str_t req = {2, {addr, value}};
+	byte_t bytes[] = {addr, value};
+	byte_str_t req = {2, bytes};
 	if(I2C_Send_Bytes(LSM9DS1_AG_ADDR, &req) & 2) {
 		LSM9DS1_AG[addr] = value; // update local register
 		return 2;
@@ -22,7 +33,8 @@ int LSM9DS1_Reset_FIFO() {
 	if(LSM9DS1_AG[FIFO_CTRL] & 0x20) {
 		int ret;
 
-		byte_str_t req = {2, {FIFO_CTRL, 0}};
+		byte_t bytes[] = {FIFO_CTRL, 0};
+		byte_str_t req = {2, bytes};
 
 		ret = I2C_Send_Bytes(LSM9DS1_AG_ADDR, &req);
 
@@ -66,6 +78,11 @@ int LSM9DS1_Set_G_BW(G_BW_T bw) {
 }
 
 
+int LSM9DS1_Set_AG_Interrupt1(INT1_CTRL_T value) {
+	 return LSM9DS1_Write_AG_Register(INT1_CTRL, value);
+}
+
+
 /**
  * Sets CTRL_REG_3.
  * @param int Low-power mode enable.
@@ -98,30 +115,34 @@ int LSM9DS1_Disable_AG_HPF() {
  * @param uint8_t (3-bit) Directional user orientation selection
  */
 int LSM9DS1_Set_G_Orientation(int pitch_neg, int roll_neg, int yaw_neg, uint8_t orient) {
-	return LSM9DS1_Write_AG_Register(ORIENT_CFG_G, pitch_neg & 1 << 5 | roll_neg & 1 << 4 | yaw_neg & 1 << 3 | orient & 7);
+	return LSM9DS1_Write_AG_Register(ORIENT_CFG_G, (pitch_neg & 1 << 5) | (roll_neg & 1 << 4) | (yaw_neg & 1 << 3) | (orient & 7));
 }
 
 
 int16_t LSM9DS1_Get_AG_Temperature() {
-	byte_str_t byteStr = {2, {0, 0}};
+	byte_t bytes[] = {0, 0};
+	byte_str_t byteStr = {2, bytes};
 	if(I2C_Cmd_Read_Bytes(LSM9DS1_AG_ADDR, OUT_TEMP_L, &byteStr) & 2) {
 		return byteStr.bytes[0] | (byteStr.bytes[1] << 8);
 	}
 	return 0x8000; // output lowest negative number as error
 }
 
-int16_t LSM9DS1_Get_Axes_Output(byte_t addr, byte_t start_reg, int auto_increment) {
-	int16_t axes[] = {0, 0, 0};
+int16_t *LSM9DS1_Get_Axes_Output(byte_t addr, byte_t start_reg, int auto_increment) {
+	// TODO: must free!!
+	int16_t *axes = (int16_t *) malloc(sizeof(int16_t)*3);
 
 	if(auto_increment) { // auto increment turned on
-		byte_str_t byteStr = {6, {0, 0, 0, 0, 0, 0}};
+		byte_t bytes[] = {0, 0, 0, 0, 0, 0};
+		byte_str_t byteStr = {6, bytes};
 		if(I2C_Cmd_Read_Bytes(addr, start_reg, &byteStr) == 6) {
 			axes[0] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
 			axes[1] = byteStr.bytes[2] | (byteStr.bytes[3] << 8);
 			axes[2] = byteStr.bytes[4] | (byteStr.bytes[5] << 8);
 		}
 	} else {
-		byte_str_t byteStr = {2, {0, 0}};
+		byte_t bytes[] = {0, 0};
+		byte_str_t byteStr = {2, bytes};
 		for(int i = 0; i < 3; i++) {
 			if(I2C_Cmd_Read_Bytes(addr, start_reg+(2*i), &byteStr) & 2) {
 				axes[i] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
@@ -132,18 +153,23 @@ int16_t LSM9DS1_Get_Axes_Output(byte_t addr, byte_t start_reg, int auto_incremen
 	return axes;
 }
 
-g_state_t LSM9DS1_Get_G_Output() {
-	return *(g_state_t *)(LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4));
+g_state_t *LSM9DS1_Get_G_Output() {
+	return (g_state_t *) LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4);
 }
 
-axes_state_t LSM9DS1_Get_XL_Output() {
-	return *(axes_state_t *)(LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_XL, LSM9DS1_AG[CTRL_REG8] & 4));
+axes_state_t *LSM9DS1_Get_XL_Output() {
+	return (axes_state_t *)  LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_XL, LSM9DS1_AG[CTRL_REG8] & 4);
 }
 
-axes_state_t LSM9DS1_Get_M_Output() {
+axes_state_t *LSM9DS1_Get_M_Output() {
 	/* TODO:
 	 *   Verify that the auto increment actually works!
 	 *   Otherwise the MSB of the sub-address must be 1 to enable it.
 	 */
-	return *(axes_state_t *)(LSM9DS1_Get_Axes_Output(LSM9DS1_M_ADDR, OUT_X_L_M, 1));
+	return (axes_state_t *) LSM9DS1_Get_Axes_Output(LSM9DS1_M_ADDR, OUT_X_L_M, 1);
+}
+
+
+int LSM9DS1_Set_AG_Reg6(XL_ODR_T odr, XL_FS_T fs, int bw_sel, XL_BW_T bw) {
+	return LSM9DS1_Write_AG_Register(CTRL_REG6_XL, odr << 5 | fs << 3 | (bw_sel & 1 << 2) | bw);
 }
