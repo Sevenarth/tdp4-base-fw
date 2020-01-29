@@ -49,7 +49,9 @@ int LSM9DS1_Reset_FIFO() {
 
 int LSM9DS1_Enable_AG_FIFO() {
 	if(!(LSM9DS1_AG[FIFO_CTRL] & 0x20)) {
-		return LSM9DS1_Write_AG_Register(FIFO_CTRL, (LSM9DS1_AG[FIFO_CTRL] & 0x1F) | 0x20);
+		int tmp = LSM9DS1_Write_AG_Register(FIFO_CTRL, (LSM9DS1_AG[FIFO_CTRL] & 0x1F) | 0x20);
+		tmp &= LSM9DS1_Write_AG_Register(CTRL_REG9, LSM9DS1_AG[CTRL_REG9] | 2);
+		return tmp;
 	}
 
 	return 0;

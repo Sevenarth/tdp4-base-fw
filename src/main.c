@@ -12,7 +12,8 @@ static const char menu[] =
 	"\t0: Exit Demo\r\n"
 	"\t1: Read output\r\n"
 	"\t2: Read register\r\n"
-	"\t3: Write register\r\n";
+	"\t3: Write register\r\n"
+	"\t4: Reset FIFO\r\n";
 #endif
 
 /* Get an integer input from UART */
@@ -170,7 +171,13 @@ int main(void)
 				DEBUGOUT("Failed!\r\n");
 			}
 			break;
-
+		case 4:
+			DEBUGOUT("Resetting FIFO...\r\n");
+			if(LSM9DS1_Reset_FIFO()) {
+				DEBUGOUT("Success!\r\n");
+			} else {
+				DEBUGOUT("Failed!\r\n");
+			}
 		default:
 			DEBUGOUT("Input Invalid! Try Again.\r\n");
 		}
