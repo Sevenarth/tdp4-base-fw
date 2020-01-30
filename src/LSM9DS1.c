@@ -8,22 +8,182 @@
 #include "LSM9DS1.h"
 #include <stdlib.h>
 
+/**
+ * Private definitions
+ */
+
+// Registers with default values
+static uint8_t LSM9DS1_AG[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x68,    // 0x0X
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, 0x38, // 0x1X
+		0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,       // 0x2X
+		0, 0, 0, 0, 0, 0, 0, 0};                              // 0x3X
+
+static uint8_t LSM9DS1_M[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, // 0x0X
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,    // 0x1X
+		0x10, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x2X
+		8, 0, 0, 0};                                       // 0x3X
+
+/************************
+ * Sensitivity dividers *
+ ************************/
+
+#define XL_SENSITIVITY_2  16393
+#define XL_SENSITIVITY_4   8196
+#define XL_SENSITIVITY_8   4098
+#define XL_SENSITIVITY_16  1366
+
+#define G_SENSITIVITY_245   114
+#define G_SENSITIVITY_500    57
+#define G_SENSITIVITY_2000   14
+
+#define M_SENSITIVITY_4    7143
+#define M_SENSITIVITY_8    3448
+#define M_SENSITIVITY_12   2326
+#define M_SENSITIVITY_16   1724
+
+static int gDiv = 1, xlDiv = 1, mDiv = 1;
+
+void set_g_divider(G_FS_T fs) {
+	switch(fs) {
+	case G_FS_245:
+	{
+		gDiv = G_SENSITIVITY_245;
+		break;
+	}
+	case G_FS_500:
+	{
+		gDiv = G_SENSITIVITY_500;
+		break;
+	}
+	case G_FS_2000:
+	{
+		gDiv = G_SENSITIVITY_2000;
+	}
+	}
+}
+
+void set_xl_divider(XL_FS_T fs) {
+	switch(fs) {
+	case XL_FS_2:
+	{
+		xlDiv = XL_SENSITIVITY_2;
+		break;
+	}
+	case XL_FS_4:
+	{
+		xlDiv = XL_SENSITIVITY_4;
+		break;
+	}
+	case XL_FS_8:
+	{
+		xlDiv = XL_SENSITIVITY_8;
+		break;
+	}
+	case XL_FS_16:
+	{
+		xlDiv = XL_SENSITIVITY_16;
+	}
+	}
+}
+
+void set_m_divider(M_FS_T fs) {
+	switch(fs) {
+	case M_FS_4:
+	{
+		mDiv = M_SENSITIVITY_4;
+		break;
+	}
+	case M_FS_8:
+	{
+		mDiv = M_SENSITIVITY_8;
+		break;
+	}
+	case M_FS_12:
+	{
+		mDiv = M_SENSITIVITY_12;
+		break;
+	}
+	case M_FS_16:
+	{
+		mDiv = M_SENSITIVITY_16;
+	}
+	}
+}
+
+int16_t *LSM9DS1_Get_Axes_Raw_Output(byte_t addr, byte_t start_reg, int auto_increment) {
+	// TODO: must free!!
+	int16_t *axes = (int16_t *) malloc(sizeof(int16_t)*3);
+	axes[0] = 0x8000;
+	axes[1] = 0x8000;
+	axes[2] = 0x8000;
+
+	if(auto_increment) { // auto increment turned on
+		byte_t bytes[] = {0, 0, 0, 0, 0, 0};
+		byte_str_t byteStr = {6, bytes};
+		if(I2C_Cmd_Read_Bytes(addr, start_reg, &byteStr) == 6) {
+			axes[0] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
+			axes[1] = byteStr.bytes[2] | (byteStr.bytes[3] << 8);
+			axes[2] = byteStr.bytes[4] | (byteStr.bytes[5] << 8);
+		}
+	} else {
+		byte_t bytes[] = {0, 0};
+		byte_str_t byteStr = {2, bytes};
+		for(int i = 0; i < 3; i++) {
+			if(I2C_Cmd_Read_Bytes(addr, start_reg+(2*i), &byteStr) & 2) {
+				axes[i] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
+			}
+		}
+	}
+
+	return axes;
+}
+
+axes_state_t *LSM9DS1_Get_Axes_Output(byte_t addr, byte_t start_reg, int auto_increment, int sensitivity_divider) {
+	int16_t *raw_data = LSM9DS1_Get_Axes_Raw_Output(addr, start_reg, auto_increment);
+
+	// We need to remodel the data from 16 bits to 32 bits, in order
+	// to provide a higher accuracy using a smaller scale (milli/10e-3)
+	axes_state_t *data = (axes_state_t *) malloc(sizeof(axes_state_t));
+	data->x = raw_data[0]*1000/sensitivity_divider;
+	data->y = raw_data[1]*1000/sensitivity_divider;
+	data->z = raw_data[2]*1000/sensitivity_divider;
+
+	free(raw_data);
+
+	return data;
+}
+
+int LSM9DS1_Write_Register(byte_t addr, byte_t reg, byte_t value) {
+	byte_t bytes[] = {reg, value};
+	byte_str_t req = {2, bytes};
+	return I2C_Send_Bytes(addr, &req) & 2;
+}
+
+int LSM9DS1_Write_M_Register(byte_t reg, byte_t value) {
+	int ret = LSM9DS1_Write_Register(LSM9DS1_M_ADDR, reg, value);
+	if(ret) {
+		LSM9DS1_M[reg] = value;
+	}
+	return ret;
+}
+
+int LSM9DS1_Write_AG_Register(byte_t reg, byte_t value) {
+	int ret = LSM9DS1_Write_Register(LSM9DS1_AG_ADDR, reg, value);
+	if(ret) {
+		LSM9DS1_AG[reg] = value;
+	}
+	return ret;
+}
+
+/**
+ * Public definitions
+ */
+
 byte_t LSM9DS1_Read_Register(byte_t addr, byte_t reg) {
 	byte_t bytes[] = {0};
 	byte_str_t byteStr = {1, bytes};
 	if(I2C_Cmd_Read_Bytes(addr, reg, &byteStr)) {
 		return byteStr.bytes[0];
-	}
-
-	return 0;
-}
-
-int LSM9DS1_Write_AG_Register(byte_t addr, byte_t value) {
-	byte_t bytes[] = {addr, value};
-	byte_str_t req = {2, bytes};
-	if(I2C_Send_Bytes(LSM9DS1_AG_ADDR, &req) & 2) {
-		LSM9DS1_AG[addr] = value; // update local register
-		return 2;
 	}
 
 	return 0;
@@ -62,9 +222,12 @@ int LSM9DS1_Set_AG_FIFO(FIFO_MODE_T mode, uint8_t threshold) {
 	return LSM9DS1_Write_AG_Register(FIFO_CTRL, mode << 5 | (threshold & 0x1F));
 }
 
-
 int LSM9DS1_Set_AG_Reg1(G_ODR_T odr, G_FS_T fs, G_BW_T bw) {
-	return LSM9DS1_Write_AG_Register(CTRL_REG1_G, odr << 5 | fs << 3 | bw);
+	int ret = LSM9DS1_Write_AG_Register(CTRL_REG1_G, odr << 5 | fs << 3 | bw);
+	if(ret) {
+		set_g_divider(fs);
+	}
+	return ret;
 }
 
 int LSM9DS1_Set_G_ODR(G_ODR_T odr) {
@@ -72,7 +235,11 @@ int LSM9DS1_Set_G_ODR(G_ODR_T odr) {
 }
 
 int LSM9DS1_Set_G_FS(G_FS_T fs) {
-	return LSM9DS1_Write_AG_Register(CTRL_REG1_G, (LSM9DS1_AG[CTRL_REG1_G] & 0xE7) | (fs << 3));
+	int ret = LSM9DS1_Write_AG_Register(CTRL_REG1_G, (LSM9DS1_AG[CTRL_REG1_G] & 0xE7) | (fs << 3));
+	if(ret) {
+		set_g_divider(fs);
+	}
+	return ret;
 }
 
 int LSM9DS1_Set_G_BW(G_BW_T bw) {
@@ -130,48 +297,49 @@ int16_t LSM9DS1_Get_AG_Temperature() {
 	return 0x8000; // output lowest negative number as error
 }
 
-int16_t *LSM9DS1_Get_Axes_Output(byte_t addr, byte_t start_reg, int auto_increment) {
-	// TODO: must free!!
-	int16_t *axes = (int16_t *) malloc(sizeof(int16_t)*3);
-
-	if(auto_increment) { // auto increment turned on
-		byte_t bytes[] = {0, 0, 0, 0, 0, 0};
-		byte_str_t byteStr = {6, bytes};
-		if(I2C_Cmd_Read_Bytes(addr, start_reg, &byteStr) == 6) {
-			axes[0] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
-			axes[1] = byteStr.bytes[2] | (byteStr.bytes[3] << 8);
-			axes[2] = byteStr.bytes[4] | (byteStr.bytes[5] << 8);
-		}
-	} else {
-		byte_t bytes[] = {0, 0};
-		byte_str_t byteStr = {2, bytes};
-		for(int i = 0; i < 3; i++) {
-			if(I2C_Cmd_Read_Bytes(addr, start_reg+(2*i), &byteStr) & 2) {
-				axes[i] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
-			}
-		}
-	}
-
-	return axes;
-}
-
 g_state_t *LSM9DS1_Get_G_Output() {
-	return (g_state_t *) LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4);
+	return (g_state_t *) LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4, gDiv);
 }
 
 axes_state_t *LSM9DS1_Get_XL_Output() {
-	return (axes_state_t *)  LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_XL, LSM9DS1_AG[CTRL_REG8] & 4);
+	return LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_XL, LSM9DS1_AG[CTRL_REG8] & 4, xlDiv);
 }
 
 axes_state_t *LSM9DS1_Get_M_Output() {
 	/* TODO:
 	 *   Verify that the auto increment actually works!
 	 *   Otherwise the MSB of the sub-address must be 1 to enable it.
+	 *
 	 */
-	return (axes_state_t *) LSM9DS1_Get_Axes_Output(LSM9DS1_M_ADDR, OUT_X_L_M, 1);
+	return LSM9DS1_Get_Axes_Output(LSM9DS1_M_ADDR, OUT_X_L_M, 1, mDiv);
 }
 
 
 int LSM9DS1_Set_AG_Reg6(XL_ODR_T odr, XL_FS_T fs, int bw_sel, XL_BW_T bw) {
-	return LSM9DS1_Write_AG_Register(CTRL_REG6_XL, odr << 5 | fs << 3 | (bw_sel & 1 << 2) | bw);
+	int ret = LSM9DS1_Write_AG_Register(CTRL_REG6_XL, odr << 5 | fs << 3 | (bw_sel & 1 << 2) | bw);
+	if(ret) {
+		set_xl_divider(fs);
+	}
+	return ret;
+}
+
+/**
+ * Set Control Register 2.
+ * @param M_FS_T Full-scale configuration
+ * @param int Reboot memory content (0: normal mode; 1: reboot memory content)
+ * @param int Configuration registers and user register reset function. (0: default value; 1: reset operation)
+ */
+int LSM9DS1_Set_M_Reg2(M_FS_T fs, int reboot, int reset_op) {
+	int ret = LSM9DS1_Write_M_Register(CTRL_REG2_M, (fs << 5) | (reboot & 1 << 3) | (reset_op & 1 << 2));
+	if(ret) {
+		set_m_divider(fs);
+	}
+	return ret;
+}
+int LSM9DS1_Set_M_FS(M_FS_T fs) {
+	int ret = LSM9DS1_Write_M_Register(CTRL_REG2_M, (LSM9DS1_M[CTRL_REG2_M] & 0x9F) | (fs << 5));
+	if(ret) {
+		set_m_divider(fs);
+	}
+	return ret;
 }

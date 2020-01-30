@@ -131,10 +131,10 @@ int main(void)
 			g_state_t *g_out = LSM9DS1_Get_G_Output();
 			axes_state_t *xl_out = LSM9DS1_Get_XL_Output();
 			DEBUGOUT("OUTPUTS\r\n\r\n");
-			DEBUGOUT("Gyroscope\r\n");
+			DEBUGOUT("Gyroscope (mdps)\r\n");
 			DEBUGOUT("Pitch: %d\tRoll: %d\tYaw: %d\r\n\r\n", g_out->pitch, g_out->roll, g_out->yaw);
-			DEBUGOUT("Accelerometer\r\n");
-			DEBUGOUT("X: %d\tY %d\tZ %d\r\n\r\n", xl_out->x, xl_out->y, xl_out->z);
+			DEBUGOUT("Accelerometer (mg)\r\n");
+			DEBUGOUT("X: %d\tY: %d\tZ: %d\r\n\r\n", xl_out->x, xl_out->y, xl_out->z);
 
 			free(g_out);
 			free(xl_out);

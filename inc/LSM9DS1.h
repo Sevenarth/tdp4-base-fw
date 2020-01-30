@@ -22,19 +22,13 @@ int LSM9DS1_Write_AG_Register(byte_t, byte_t);
 byte_t LSM9DS1_Read_Register(byte_t, byte_t);
 
 typedef struct axes_state {
-	int16_t x, y, z;
+	int x, y, z;
 } axes_state_t;
 
 /****************************************
  * Accelerometer (XL) and gyroscope (G) *
  * register mappings         	  	    *
  ****************************************/
-
-// Registers with default values
-static uint8_t LSM9DS1_AG[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x68,    // 0x0X
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, 0x38, // 0x1X
-		0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,       // 0x2X
-		0, 0, 0, 0, 0, 0, 0, 0};                              // 0x3X
 
 #define ACT_THS				0x04 // Activity threshold register
 #define ACT_DUR				0x05 // Inactivity duration register
@@ -270,7 +264,7 @@ int16_t LSM9DS1_Get_AG_Temperature();
 #define OUT_Z_H_G			0x1D
 
 typedef struct g_state {
-	int16_t pitch, roll, yaw;
+	int pitch, roll, yaw;
 } g_state_t;
 
 g_state_t *LSM9DS1_Get_G_Output();
@@ -443,13 +437,6 @@ int LSM9DS1_Set_AG_FIFO(FIFO_MODE_T, uint8_t);
 /**********************************
  * Magnetometer register mappings *
  **********************************/
-
-
-// Registers with default values
-static uint8_t LSM9DS1_M[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, // 0x0X
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,    // 0x1X
-		0x10, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x2X
-		8, 0, 0, 0};                                       // 0x3X
 
 /**
  * These registers are 16-bit registers and represent the X/Y/Z offsets used
