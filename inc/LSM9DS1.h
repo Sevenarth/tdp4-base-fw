@@ -21,6 +21,11 @@ int LSM9DS1_Write_AG_Register(byte_t, byte_t);
 
 byte_t LSM9DS1_Read_Register(byte_t, byte_t);
 
+int LSM9DS1_Init();
+int LSM9DS1_Reset();
+int LSM9DS1_AG_Reset();
+int LSM9DS1_M_Reset();
+
 typedef struct axes_state {
 	int x, y, z;
 } axes_state_t;

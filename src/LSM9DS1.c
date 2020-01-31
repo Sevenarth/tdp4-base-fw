@@ -7,21 +7,19 @@
 
 #include "LSM9DS1.h"
 #include <stdlib.h>
+#include <string.h>
 
 /**
  * Private definitions
  */
 
-// Registers with default values
-static uint8_t LSM9DS1_AG[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x68,    // 0x0X
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, 0x38, // 0x1X
-		0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,       // 0x2X
-		0, 0, 0, 0, 0, 0, 0, 0};                              // 0x3X
+// Register sizes
+#define LSM9DS1_AG_MEM_SIZE 0x38
+#define LSM9DS1_M_MEM_SIZE  0x34
 
-static uint8_t LSM9DS1_M[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x38, // 0x0X
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,    // 0x1X
-		0x10, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0x2X
-		8, 0, 0, 0};                                       // 0x3X
+// Registers
+static uint8_t LSM9DS1_AG[LSM9DS1_AG_MEM_SIZE];
+static uint8_t LSM9DS1_M[LSM9DS1_M_MEM_SIZE];
 
 /************************
  * Sensitivity dividers *
@@ -178,6 +176,38 @@ int LSM9DS1_Write_AG_Register(byte_t reg, byte_t value) {
 /**
  * Public definitions
  */
+
+int LSM9DS1_Init() {
+	return LSM9DS1_Reset();
+}
+
+int LSM9DS1_Reset() {
+	int ret = LSM9DS1_AG_Reset();
+	ret |= LSM9DS1_M_Reset();
+	return ret;
+}
+
+int LSM9DS1_AG_Reset() {
+	// Setting default values for gyroscope+accelerometer registers
+	memset(LSM9DS1_AG, 0, sizeof(uint8_t)*LSM9DS1_AG_MEM_SIZE);
+	LSM9DS1_AG[0x0F] = 0x68;
+	LSM9DS1_AG[0x1E] = 0x38;
+	LSM9DS1_AG[0x1F] = 0x38;
+	LSM9DS1_AG[0x22] = 0x04;
+
+	return LSM9DS1_Write_Register(LSM9DS1_AG_ADDR, CTRL_REG8, 1); // AG soft reset trigger
+}
+
+int LSM9DS1_M_Reset() {
+	// Setting default values for magnetometer registers
+	memset(LSM9DS1_M, 0, sizeof(uint8_t)*LSM9DS1_M_MEM_SIZE);
+	LSM9DS1_M[0x0F] = 0x38;
+	LSM9DS1_M[0x20] = 0x10;
+	LSM9DS1_M[0x22] = 0x03;
+	LSM9DS1_M[0x30] = 0x08;
+
+	return LSM9DS1_Write_Register(LSM9DS1_M_ADDR, CTRL_REG2_M, 4); // M soft reset trigger
+}
 
 byte_t LSM9DS1_Read_Register(byte_t addr, byte_t reg) {
 	byte_t bytes[] = {0};
