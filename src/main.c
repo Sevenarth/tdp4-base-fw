@@ -117,7 +117,10 @@ int main(void)
 	LSM9DS1_Set_AG_Interrupt1(INT1_FSS5);
 	LSM9DS1_Set_AG_Reg1(G_ODR_952, G_FS_2000, G_BW_0);
 	LSM9DS1_Set_AG_Reg6(XL_ODR_952, XL_FS_16, 0, 0);
-
+	LSM9DS1_Set_M_Operating_Mode(SINGLE_CONVERSION_MODE);
+	LSM9DS1_Set_M_FS(M_FS_16);
+	LSM9DS1_Set_M_Reg1(0, HIGH_PERFORMANCE_MODE, M_ODR_80, 0, 0);
+	LSM9DS1_Set_M_Z_Operative_Mode(HIGH_PERFORMANCE_MODE);
 
 	while (!xflag) {
 		switch (i2c_menu()) {
@@ -130,14 +133,18 @@ int main(void)
 		{
 			g_state_t *g_out = LSM9DS1_Get_G_Output();
 			axes_state_t *xl_out = LSM9DS1_Get_XL_Output();
+			axes_state_t *m_out = LSM9DS1_Get_M_Output();
 			DEBUGOUT("OUTPUTS\r\n\r\n");
 			DEBUGOUT("Gyroscope (mdps)\r\n");
 			DEBUGOUT("Pitch: %d\tRoll: %d\tYaw: %d\r\n\r\n", g_out->pitch, g_out->roll, g_out->yaw);
 			DEBUGOUT("Accelerometer (mg)\r\n");
 			DEBUGOUT("X: %d\tY: %d\tZ: %d\r\n\r\n", xl_out->x, xl_out->y, xl_out->z);
+			DEBUGOUT("Magnetometer (mgauss)\r\n");
+			DEBUGOUT("X: %d\tY: %d\tZ: %d\r\n\r\n", m_out->x, m_out->y, m_out->z);
 
 			free(g_out);
 			free(xl_out);
+			free(m_out);
 
 			byte_t fifo_status = LSM9DS1_Read_Register(LSM9DS1_AG_ADDR, FIFO_SRC);
 			DEBUGOUT("FIFO STATUS\r\n");

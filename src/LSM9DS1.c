@@ -323,6 +323,28 @@ int LSM9DS1_Set_AG_Reg6(XL_ODR_T odr, XL_FS_T fs, int bw_sel, XL_BW_T bw) {
 	return ret;
 }
 
+
+/**
+ * Set Control Register 1.
+ * @param int Temperature compensation enable
+ * @param OPERATIVE_MODE_T X and Y axes operative mode selection
+ * @param M_ODR_T Output data rate selection
+ * @param int FAST_ODR enables data rates higher than 80 Hz
+ * @param int Self-test enable
+ */
+int LSM9DS1_Set_M_Reg1(int t_comp_en, OPERATIVE_MODE_T xy_op_mode, M_ODR_T odr, int fast_odr_en, int self_test_en) {
+	return LSM9DS1_Write_M_Register(CTRL_REG1_M, (t_comp_en & 1 << 7) | (xy_op_mode << 5) | (odr << 2) | (fast_odr_en & 1 << 1) | (self_test_en & 1));
+}
+
+int LSM9DS1_Set_M_XY_Operative_Mode(OPERATIVE_MODE_T xy_op_mode) {
+	return LSM9DS1_Write_M_Register(CTRL_REG1_M, (LSM9DS1_M[CTRL_REG1_M] & 0x9F) | (xy_op_mode << 5));
+}
+
+int LSM9DS1_Set_M_ODR(M_ODR_T odr) {
+	return LSM9DS1_Write_M_Register(CTRL_REG1_M, (LSM9DS1_M[CTRL_REG1_M] & 0xE3) | (odr << 2));
+}
+
+
 /**
  * Set Control Register 2.
  * @param M_FS_T Full-scale configuration
@@ -342,4 +364,32 @@ int LSM9DS1_Set_M_FS(M_FS_T fs) {
 		set_m_divider(fs);
 	}
 	return ret;
+}
+
+/**
+ * Set Control Register 3.
+ * @param int Disable I2C interface
+ * @param int Low-power mode configuration
+ * @param int SPI Serial Interface mode selection
+ * @param M_OPERATING_MODE_T Operating mode selection
+ */
+int LSM9DS1_Set_M_Reg3(int disable_i2c, int low_power_en, int spi_rw, M_OPERATING_MODE_T op_mode) {
+	return LSM9DS1_Write_M_Register(CTRL_REG3_M, (disable_i2c & 1 << 7) | (low_power_en & 1 << 5) | (spi_rw & 1 << 2) | op_mode);
+}
+
+int LSM9DS1_Set_M_Operating_Mode(M_OPERATING_MODE_T op_mode) {
+	return LSM9DS1_Write_M_Register(CTRL_REG3_M, (LSM9DS1_M[CTRL_REG3_M] & 0xFC) | op_mode);
+}
+
+/**
+ * Set Control Register 4
+ * @param OPERATIVE_MODE Z-axis operative mode selection
+ * @param int Big/Little Endian selection (default: 0)
+ */
+int LSM9DS1_Set_M_Reg4(OPERATIVE_MODE_T z_op_mode, int endianness) {
+	return LSM9DS1_Write_M_Register(CTRL_REG4_M, (z_op_mode << 2) | (endianness & 1 << 1));
+}
+
+int LSM9DS1_Set_M_Z_Operative_Mode(OPERATIVE_MODE_T z_op_mode) {
+	return LSM9DS1_Write_M_Register(CTRL_REG4_M, (LSM9DS1_M[CTRL_REG4_M] & 0xF3) | (z_op_mode << 2));
 }

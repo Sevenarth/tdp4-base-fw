@@ -491,6 +491,8 @@ typedef enum m_odr {
  * @param int Self-test enable
  */
 int LSM9DS1_Set_M_Reg1(int, OPERATIVE_MODE_T, M_ODR_T, int, int);
+int LSM9DS1_Set_M_XY_Operative_Mode(OPERATIVE_MODE_T);
+int LSM9DS1_Set_M_ODR(M_ODR_T odr);
 
 #define CTRL_REG2_M			0x21
 
@@ -538,7 +540,7 @@ int LSM9DS1_Set_M_Operating_Mode(M_OPERATING_MODE_T);
  * @param int Big/Little Endian selection (default: 0)
  */
 int LSM9DS1_Set_M_Reg4(OPERATIVE_MODE_T, int);
-int LSM9DS1_Set_M_Operative_Mode(OPERATIVE_MODE_T);
+int LSM9DS1_Set_M_Z_Operative_Mode(OPERATIVE_MODE_T);
 
 #define CTRL_REG5_M			0x24
 #define STATUS_REG_M		0x27
