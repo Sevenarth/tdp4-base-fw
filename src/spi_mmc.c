@@ -2,299 +2,374 @@
  * spi_mmc.c
  *
  * Port from https://www.nxp.com/docs/en/application-note/AN10406.pdf
+ * 	         https://github.com/microbuilder/LPC1114CodeBase/blob/master/drivers/fatfs/mmc.c
  *
  *  Created on: 1 Feb 2020
  *      Author: TDP4 Team 3
  */
 
+#define IOCON_GPIO (IOCON_FUNC0 | IOCON_MODE_PULLUP | IOCON_INV_EN | IOCON_DIGMODE_EN)
 #include "spi_mmc.h"
 
-BYTE mmc_write_data[MMC_DATA_SIZE];
-BYTE mmc_read_data[MMC_DATA_SIZE];
-BYTE mmc_cmd[MMC_CMD_SIZE];
-mmc_status_t mmc_status = NIL;
+static uint8_t tx_buffer[MMC_DATA_SIZE];
+static uint8_t rx_buffer[MMC_DATA_SIZE];
+static uint8_t card_type;
 
-/************************** MMC Init *********************************/
-/*
- * Initialises the MMC into SPI mode and sets block size(512), returns
- * 0 on success
- *
+/**
+ * Private definitions
  */
-mmc_status_t mmc_init() {
+
+void ssp_init() {
 	Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO0_8, (IOCON_FUNC1 | IOCON_MODE_INACT));	/* MISO0 */
 	Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO0_9, (IOCON_FUNC1 | IOCON_MODE_INACT));	/* MOSI0 */
-	Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO0_2, (IOCON_FUNC1 | IOCON_MODE_INACT));	/* SSEL0 */
+	Chip_IOCON_PinMuxSet(LPC_IOCON, MMC_CS_IOCON, IOCON_GPIO);	                        /* SSEL0 */
+	Chip_GPIO_SetPinDIROutput(LPC_GPIO, MMC_CS_PORT, MMC_CS_PIN);
 	Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO2_11, (IOCON_FUNC1 | IOCON_MODE_INACT));	/* SCK0 */
 	Chip_IOCON_PinLocSel(LPC_IOCON, IOCON_SCKLOC_PIO2_11);
 
 	Chip_SSP_Init(LPC_SSP);
-
-	DWORD i;
-	/* Generate a data pattern for write block */
-	for(i = 0; i < MMC_DATA_SIZE; i++)
-		mmc_write_data[i] = i;
-
-	mmc_status = NIL;
-
-	Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-
-	/* initialise the MMC card into SPI mode by sending 80 clks on */
-	/* Use MMCRDData as a temporary buffer for SPI_Send() */
-	for(i = 0; i < 10; i++)
-		mmc_read_data[i] = 0xFF;
-
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_read_data, 10);
-
-	Chip_SSP_Disable(LPC_SSP); /* clear SPI SSEL */
-
-	/* send CMD0(RESET or GO_IDLE_STATE) command, all the arguments
-  	  are 0x00 for the reset command, precalculated checksum */
-	mmc_cmd[0] = 0x40;
-	mmc_cmd[1] = 0x00;
-	mmc_cmd[2] = 0x00;
-	mmc_cmd[3] = 0x00;
-	mmc_cmd[4] = 0x00;
-	mmc_cmd[5] = 0x95;
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_cmd, MMC_CMD_SIZE);
-
-	/* if = 1 then there was a timeout waiting for 0x01 from the MMC */
-	if(mmc_response(0x01) == 1) {
-		mmc_status = IDLE_STATE_TIMEOUT;
-		Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-		return mmc_status;
-	}
-
-	/* Send some dummy clocks after GO_IDLE_STATE */
-	Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1);
-	Chip_SSP_Disable(LPC_SSP); /* clear SPI SSEL */
-
-	/* must keep sending command until zero response ia back. */
-	i = MAX_TIMEOUT;
-	do {
-		/* send mmc CMD1(SEND_OP_COND) to bring out of idle state */
-		/* all the arguments are 0x00 for command one */
-		mmc_cmd[0] = 0x41;
-		*((uint32_t *) (mmc_cmd+1)) = 0; // set mmc_cmd[1:4] to 0
-		/* checksum is no longer required but we always send 0xFF */
-		mmc_cmd[5] = 0xFF;
-
-		Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_cmd, MMC_CMD_SIZE)
-	} while (mmc_response(0x00) != 0 && --i > 0);
-
-	/* timeout waiting for 0x00 from the MMC */
-	if ( i == 0 ) {
-		mmc_status = OP_COND_TIMEOUT;
-		Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-		return mmc_status;
-	}
-	/* Send some dummy clocks after SEND_OP_COND */
-	Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1);
-	Chip_SSP_Disable(LPC_SSP); /* clear SPI SSEL */
-
-	/* send MMC CMD16(SET_BLOCKLEN) to set the block length */
-	mmc_cmd[0] = 0x50;
-	mmc_cmd[1] = 0x00; /* 4 bytes from here is the block length */
-	/* LSB is first */
-
-	/* 00 00 00 10 set to 16 bytes */
-	/* 00 00 02 00 set to 512 bytes */
-	mmc_cmd[2] = 0x00;
-
-	/* high block length bits - 512 bytes */
-	mmc_cmd[3] = 0x02;
-
-	/* low block length bits */
-	mmc_cmd[4] = 0x00;
-
-	/* checksum is no longer required but we always send 0xFF */
-	mmc_cmd[5] = 0xFF;
-
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_cmd, MMC_CMD_SIZE);
-
-	if(mmc_response(0x00) == 1) {
-		mmc_status = SET_BLOCKLEN_TIMEOUT;
-		Chip_SSP_Enable(LPC_SSP); /*set SPI SSEL*/
-		return mmc_status;
-	}
-
-	Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1);
-
-	return 0;
-}
-
-/************************** MMC Write Block ***************************/
-/* write a block of data based on the length that has been set
- * in the SET_BLOCKLEN command.
- * Send the WRITE_SINGLE_BLOCK command out first, check the
- * R1 response, then send the data start token(bit 0 to 0) followed by
- * the block of data. The test program sets the block length to 512
- * bytes. When the data write finishs, the response should come back
- * as 0xX5 bit 3 to 0 as 0101B, then another non-zero value indicating
- * that MMC card is in idle state again.
- *
- */
-int mmc_write_block(WORD block_number) {
-	WORD varl, varh;
-	BYTE Status;
-
-	Chip_SSP_Disable(LPC_SSP); /* clear SPI SSEL */
-
-	/* block size has been set in mmc_init() */
-	varl = (block_number & 0x003F) << 9;
-	varh = (block_number & 0xFFC0) >> 7;
-
-	/* send mmc CMD24(WRITE_SINGLE_BLOCK) to write the data to MMC card */
-	mmc_cmd[0] = 0x58;
-
-	/* high block address bits, varh HIGH and LOW */
-	mmc_cmd[1] = varh >> 0x08;
-	mmc_cmd[2] = varh & 0xFF;
-
-	/* low block address bits, varl HIGH and LOW */
-	mmc_cmd[3] = varl >> 0x08;
-	mmc_cmd[4] = varl & 0xFF;
-
-	/* checksum is no longer required but we always send 0xFF */
-	mmc_cmd[5] = 0xFF;
-
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_cmd, MMC_CMD_SIZE);
-
-	/* if mmc_response returns 1 then we failed to get a 0x00 response */
-	if(mmc_response(0x00) == 1) {
-		mmc_status = WRITE_BLOCK_TIMEOUT;
-		Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-		return mmc_status;
-	}
-
-	/* Set bit 0 to 0 which indicates the beginning of the data block */
-	mmc_cmd[0] = 0xFE;
-
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_cmd, 1);
-
-	/* send data, pattern as 0x00,0x01,0x02,0x03,0x04,0x05 ...*/
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_write_data, MMC_DATA_SIZE);
-
-	/* Send dummy checksum */
-	/* when the last check sum is sent, the response should come back
-  	   immediately. So, check the SPI FIFO MISO and make sure the status
-  	   return 0xX5, the bit 3 through 0 should be 0x05 */
-	mmc_cmd[0] = 0xFF;
-	mmc_cmd[1] = 0xFF;
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_cmd, 2);
-
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1);
-	status = mmc_read_data[0];
-
-	if((status & 0x0F) != 0x05) {
-		mmc_status = WRITE_BLOCK_FAIL;
-		Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-		return mmc_status;
-	}
-
-	/* if the status is already zero, the write hasn't finished yet and card is busy */
-	if(mmc_wait_for_write_finish() == 1) {
-		mmc_status = WRITE_BLOCK_FAIL;
-		Chip_SSP_Enable(LPC_SSP);
-		return mmc_status;
-	}
-
 	Chip_SSP_Enable(LPC_SSP);
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1);
-	return 0;
 }
 
-/************************** MMC Read Block ****************************/
-/*
- * Reads a 512 Byte block from the MMC
- * Send READ_SINGLE_BLOCK command first, wait for response come back
- * 0x00 followed by 0xFE. The call SPI_Receive() to read the data
- * block back followed by the checksum.
- *
- */
-int mmc_read_block(WORD block_number) {
-	WORD Checksum;
-	WORD varh, varl;
-
-	Chip_SSP_Disable(LPC_SSP); /* clear SPI SSEL */
-
-	varl = (block_number & 0x003F) << 9;
-	varh = (block_number & 0xFFC0) >> 7;
-
-	/* send MMC CMD17(READ_SINGLE_BLOCK) to read the data from MMC card */
-	mmc_cmd[0] = 0x51;
-	/* high block address bits, varh HIGH and LOW */
-	mmc_cmd[1] = varh >> 0x08;
-	mmc_cmd[2] = varh & 0xFF;
-	/* low block address bits, varl HIGH and LOW */
-	mmc_cmd[3] = varl >> 0x08;
-	mmc_cmd[4] = varl & 0xFF;
-	/* checksum is no longer required but we always send 0xFF */
-	mmc_cmd[5] = 0xFF;
-
-	Chip_SSP_WriteFrames_Blocking(LPC_SSP, mmc_cmd, MMC_CMD_SIZE);
-
-	/* if mmc_response returns 1 then we failed to get a 0x00 response */
-	if(mmc_response(0x00) == 1) {
-		mmc_status = READ_BLOCK_TIMEOUT;
-		Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-		return mmc_status;
-	}
-	/* wait for data token */
-	if(mmc_response(0xFE) == 1) {
-		mmc_status = READ_BLOCK_DATA_TOKEN_MISSING;
-		Chip_SSP_Enable(LPC_SSP);
-		return mmc_status;
-	}
-
-	/* Get the block of data based on the length */
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, MMC_DATA_SIZE);
-
-	/* CRC bytes that are not needed */
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 2);
-	Checksum = mmc_read_data[0] << 0x08 | mmc_read_data[1];
-
-	Chip_SSP_Enable(LPC_SSP); /* set SPI SSEL */
-	Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1) ;
-
-	return 0;
+int32_t ssp_send(uint32_t buffer_len) {
+	return Chip_SSP_WriteFrames_Blocking(LPC_SSP, tx_buffer, buffer_len);
 }
-/***************** MMC get response *******************/
-/*
- * Repeatedly reads the MMC until we get the
- * response we want or timeout
- */
-int mmc_response(BYTE response) {
-	if(Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1) && mmc_read_data[0] == response) {
+
+int32_t ssp_read(uint32_t buffer_len) {
+	return Chip_SSP_ReadFrames_Blocking(LPC_SSP, rx_buffer, buffer_len);
+}
+
+#define ssp_recv() ssp_read(1)
+
+static uint8_t wait_ready(void)
+{
+	uint8_t timeout = MAX_TIMEOUT;
+
+	ssp_recv();
+
+	do {
+		ssp_recv();
+	} while (*rx_buffer != 0xFF && timeout--);
+
+	return *rx_buffer;
+}
+
+static void card_deselect() {
+	LPC_GPIO[MMC_CS_PORT].DATA[1 << MMC_CS_PIN] = (1 << MMC_CS_PIN);
+	ssp_recv();
+}
+
+static uint8_t card_select() {
+	LPC_GPIO[MMC_CS_PORT].DATA[1 << MMC_CS_PIN] = 0;
+
+	if(wait_ready() != 0xFF) {
+		card_deselect();
 		return 0;
 	}
 
 	return 1;
 }
 
-/***************** MMC wait for write finish *******************/
-/*
- * Repeatedly reads the MMC until we get a non-zero value (after
- * a zero value) indicating the write has finished and card is no
- * longer busy.
- *
- */
-int mmc_wait_for_write_finish() {
-	DWORD count = 0xFFFF; /* The delay is set to maximum considering the longest data block length to handle */
-	BYTE result = 0;
+uint8_t mmc_send_cmd(mmc_cmd_t cmd, uint32_t arg) {
+	uint8_t n, res;
 
-	while((result == 0) && count)
-	{
-		Chip_SSP_ReadFrames_Blocking(LPC_SSP, mmc_read_data, 1);
-		result = mmc_read_data[0];
-		count--;
+	if (cmd & 0x80) { /* ACMD<n> is the command sequence of CMD55-CMD<n> */
+		cmd &= 0x7F;
+		res = mmc_send_cmd(CMD55, 0);
+
+		if (res > 1) return res;
 	}
 
-	if(count == 0)
+	card_deselect();
+	if (!card_select()) return 0xFF;
+
+	tx_buffer[0] = cmd;
+	tx_buffer[1] = (uint8_t) (arg >> 24);
+	tx_buffer[2] = (uint8_t) (arg >> 16);
+	tx_buffer[3] = (uint8_t) (arg >> 8);
+	tx_buffer[4] = (uint8_t) arg;
+	switch(cmd) { // CRC
+	case CMD0: { tx_buffer[5] = 0x95; break; }  // crc for CMD0
+	case CMD8: { tx_buffer[5] = 0x87; break; }  // crc for CMD8
+	default: { tx_buffer[5] = 0x01; }           // crc not checked
+	}
+
+	ssp_send(6);
+
+	if(cmd == CMD12) ssp_recv(); // skip a byte
+
+	n = 10;
+	do ssp_recv(); while ((*rx_buffer & 0x80) && --n);
+
+	return *rx_buffer;
+}
+
+static int mmc_read_datablock (
+	uint8_t *buff,			/* Data buffer to store received data */
+	unsigned int btr		/* Byte count (must be multiple of 4) */
+)
+{
+	uint8_t token, timeout = 20;
+	do {
+		ssp_recv();
+		token = *rx_buffer;
+	} while ((token == 0xFF) && timeout--);
+
+	if(token != 0xFE) return 0;	/* If not valid data token, return with error */
+
+	do {							/* Receive the data block into buffer */
+		Chip_SSP_ReadFrames_Blocking(LPC_SSP, buff, 4);
+		buff += 4;
+	} while (btr -= 4);
+
+	ssp_recv();		/* Discard CRC */
+	ssp_recv();
+
+	return 1;	/* Return with success */
+}
+
+static int mmc_write_datablock (
+	uint8_t *buff,	/* 512 byte data block to be transmitted */
+	uint8_t token			/* Data/Stop token */
+)
+{
+	if (wait_ready() != 0xFF) return 0;
+
+	*tx_buffer = token;
+	ssp_send(1);					/* Xmit data token */
+
+	if (token != 0xFD) {	/* Is data token */
+		Chip_SSP_WriteFrames_Blocking(LPC_SSP, buff, 512);
+
+		tx_buffer[0] = 0xFF;
+		tx_buffer[1] = 0xFF;
+		ssp_send(2);					/* CRC (Dummy) */
+
+		ssp_recv();				/* Reveive data response */
+		if ((*rx_buffer & 0x1F) != 0x05)		/* If not accepted, return with error */
+			return 0;
+	}
+
+	return 1;
+}
+
+card_type_t mmc_init() {
+	ssp_init();
+	card_deselect();
+
+	uint8_t n, cmd, ocr[4], timeout;
+
+	/* initialise the MMC card into SPI mode by sending 80 clks on */
+	/* Use MMCRDData as a temporary buffer for SPI_Send() */
+	ssp_read(10);
+
+	/* send CMD0(RESET or GO_IDLE_STATE) command, all the arguments
+  	  are 0x00 for the reset command */
+	if (mmc_send_cmd(CMD0, 0) == 0x01) {
+		timeout = 100;
+		if (mmc_send_cmd(CMD8, 0x1AA) == 0x01) { /* SDHC */
+			for (n = 0; n < 4; n++) {
+				ssp_recv(); /* Get trailing return value of R7 resp */
+				ocr[n] = *rx_buffer;
+			}
+
+			if (ocr[2] == 0x01 && ocr[3] == 0xAA) { /* The card can work at vdd range of 2.7-3.6V */
+				while (timeout-- && mmc_send_cmd(ACMD41, 1UL << 30)); /* Wait for leaving idle state (ACMD41 with HCS bit) */
+
+				if (timeout && mmc_send_cmd(CMD58, 0) == 0) { /* Check CCS bit in the OCR */
+					for (n = 0; n < 4; n++) {
+						ssp_recv();
+						ocr[n] = *rx_buffer;
+					}
+
+					card_type = (ocr[0] & 0x40) ? CT_SD2 | CT_BLOCK : CT_SD2;	/* SDv2 */
+				}
+			}
+		} else { /* SDSC or MMC */
+			if (mmc_send_cmd(ACMD41, 0) <= 1) 	{
+				card_type = CT_SD1;
+				cmd = ACMD41; /* SDv1 */
+			} else {
+				card_type = CT_MMC;
+				cmd = CMD1; /* MMCv3 */
+			}
+
+			while (timeout-- && mmc_send_cmd(cmd, 0));       /* Wait for leaving idle state */
+			if (!timeout || mmc_send_cmd(CMD16, 512) != 0)   /* Set R/W block length to 512 */
+				card_type = 0;
+		}
+	}
+
+	card_deselect();
+
+	if(card_type) {
+		Chip_SSP_SetBitRate(LPC_SSP, FAST_BITRATE);
+	}
+
+	return card_type;
+}
+
+uint8_t mmc_read_single_block(uint32_t sector, uint8_t *buffer) {
+	int success = (mmc_send_cmd(CMD17, sector) == 0)	/* READ_SINGLE_BLOCK */
+						&& mmc_read_datablock(buffer, 512);
+	card_deselect();
+
+	if(success)
+		return 0;
+
+	return 1;
+}
+
+uint8_t mmc_read_multiple_blocks(uint32_t sector, uint8_t *buffer, unsigned int length) {
+	if (mmc_send_cmd(CMD18, sector) == 0) {	/* READ_MULTIPLE_BLOCK */
+		do {
+			if (!mmc_read_datablock(buffer, 512)) break;
+			buffer += 512;
+		} while (--length);
+		mmc_send_cmd(CMD12, 0);				/* STOP_TRANSMISSION */
+	}
+
+	card_deselect();
+
+	return length;
+}
+
+uint8_t mmc_write_single_block(uint32_t sector, uint8_t *buffer) {
+	int success = (mmc_send_cmd(CMD24, sector) == 0)	/* WRITE_BLOCK */
+						&& mmc_write_datablock(buffer, 0xFE);
+	card_deselect();
+
+	if(success)
+		return 0;
+
+	return 1;
+}
+
+uint8_t mmc_write_multiple_blocks(uint32_t sector, uint8_t *buffer, unsigned int length) {
+	if (card_type & CT_SDC) mmc_send_cmd(ACMD23, length);
+
+	if (mmc_send_cmd(CMD25, sector) == 0) {	/* WRITE_MULTIPLE_BLOCK */
+		do {
+			if (!mmc_write_datablock(buffer, 0xFC)) break;
+			buffer += 512;
+		} while (--length);
+
+		if (!mmc_write_datablock(0, 0xFD))	/* STOP_TRAN token */
+			length = 1;
+	}
+
+	card_deselect();
+
+	return length;
+}
+
+int mmc_sync() {
+	if(card_select()) {
+		card_deselect();
 		return 1;
+	}
 
 	return 0;
+}
+
+int mmc_get_sector_count(uint32_t *buff) {
+	uint8_t n, csd[16];
+	int success = 0;
+
+	if ((mmc_send_cmd(CMD9, 0) == 0) && mmc_read_datablock(csd, 16)) {
+		uint16_t csize;
+
+		if ((csd[0] >> 6) == 1) {	/* SDC ver 2.00 */
+			csize = (csd[9] + ((uint16_t) csd[8] << 8) + 1);
+			*buff = (uint32_t) csize << 10;
+		} else {					/* SDC ver 1.XX or MMC*/
+			n = (csd[5] & 15) + ((csd[10] & 128) >> 7) + ((csd[9] & 3) << 1) + 2;
+			csize = (csd[8] >> 6) + ((uint16_t) csd[7] << 2) + ((uint16_t) (csd[6] & 3) << 10) + 1;
+			*buff = (uint32_t) csize << (n - 9);
+		}
+
+		success = 1;
+	}
+
+	card_deselect();
+	return success;
+}
+
+int mmc_get_block_size(uint32_t *buffer) {
+	uint8_t n, csd[16];
+	int success = 0;
+
+	if (card_type & CT_SD2) {	/* SDC ver 2.00 */
+		if (mmc_send_cmd(ACMD13, 0) == 0) {	/* Read SD status */
+			ssp_recv();
+			if (mmc_read_datablock(csd, 16)) {		/* Read partial block */
+				for (n = 64 - 16; n; n--) ssp_recv();	/* Purge trailing data */
+				*buffer = 16UL << (csd[10] >> 4);
+
+				success = 1;
+			}
+		}
+	} else {					/* SDC ver 1.XX or MMC */
+		if ((mmc_send_cmd(CMD9, 0) == 0) && mmc_read_datablock(csd, 16)) {	/* Read CSD */
+			if (card_type & CT_SD1) {	/* SDC ver 1.XX */
+				*buffer = (((csd[10] & 63) << 1) + ((WORD)(csd[11] & 128) >> 7) + 1) << ((csd[13] >> 6) - 1);
+			} else {					/* MMC */
+				*buffer = ((WORD)((csd[10] & 124) >> 2) + 1) * (((csd[11] & 3) << 3) + ((csd[11] & 224) >> 5) + 1);
+			}
+
+			success = 1;
+		}
+	}
+
+	card_deselect();
+	return success;
+}
+
+int mmc_get_status(uint32_t *buffer) {
+	int success = 0;
+
+	if (mmc_send_cmd(ACMD13, 0) == 0) {	/* SD_STATUS */
+		ssp_recv();
+		if (mmc_read_datablock(buffer, 64))
+			success = 1;
+	}
+
+	card_deselect();
+	return success;
+}
+
+int mmc_get_ocr(uint32_t *buffer) {
+	int success = 0, n;
+	if (mmc_send_cmd(CMD58, 0) == 0) {	/* READ_OCR */
+		for (n = 4; n; n--) {
+			ssp_recv();
+			*buffer++ = *rx_buffer;
+		}
+		success = 1;
+	}
+
+	card_deselect();
+	return success;
+}
+
+int mmc_get_cid(uint32_t *buffer) {
+	int success = 0;
+
+	if (mmc_send_cmd(CMD10, 0) == 0		/* READ_CID */
+				&& mmc_read_datablock(buffer, 16))
+				success = 1;
+
+	card_deselect();
+	return success;
+}
+
+int mmc_get_csd(uint32_t *buffer) {
+	int success = 0;
+
+	if (mmc_send_cmd(CMD9, 0) == 0		/* READ_CSD */
+				&& mmc_read_datablock(buffer, 16))
+				success = 1;
+
+	card_deselect();
+	return success;
 }

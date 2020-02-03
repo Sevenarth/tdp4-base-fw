@@ -30,9 +30,7 @@
  */
 
 #include "board.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "i2c.h"
+#include "ff.h"
 
 /*****************************************************************************
  * Private types/enumerations/variables
@@ -50,46 +48,29 @@
 static void prvSetupHardware(void)
 {
 	SystemCoreClockUpdate();
-	Board_Init();
-	Init_I2C();
-}
-
-/* LED0 toggle thread */
-static void vLEDTask0(void *pvParameters) {
-	bool LedState = false;
-	while (1) {
-		Chip_GPIO_SetPinState(LPC_GPIO, 0, 7, LedState);
-		LedState = (bool) !LedState;
-
-		vTaskDelay(configTICK_RATE_HZ/2);
-	}
-}
-
-/* LED1 toggle thread */
-static void vLEDTask1(void *pvParameters) {
-	bool LedState = false;
-	while (1) {
-		Chip_GPIO_SetPinState(LPC_GPIO, 0, 8, LedState);
-		LedState = (bool) !LedState;
-
-		vTaskDelay(configTICK_RATE_HZ*2);
-	}
-}
-
-/* LED2 toggle thread */
-static void vLEDTask2(void *pvParameters) {
-	bool LedState = false;
-	while (1) {
-		Chip_GPIO_SetPinState(LPC_GPIO, 0, 9, LedState);
-		LedState = (bool) !LedState;
-
-		vTaskDelay(configTICK_RATE_HZ);
-	}
+	Chip_GPIO_Init(LPC_GPIO);
 }
 
 /*****************************************************************************
  * Public functions
  ****************************************************************************/
+FRESULT open_append (
+    FIL* fp,            /* [OUT] File object to create */
+    const char* path    /* [IN]  File name to be opened */
+)
+{
+    FRESULT fr;
+
+    /* Opens an existing file. If not exist, creates a new file. */
+    fr = f_open(fp, path, FA_WRITE | FA_OPEN_ALWAYS);
+    if (fr == FR_OK) {
+        /* Seek to end of the file to append data */
+        fr = f_lseek(fp, f_size(fp));
+        if (fr != FR_OK)
+            f_close(fp);
+    }
+    return fr;
+}
 
 /**
  * @brief	main routine for FreeRTOS blinky example
@@ -99,23 +80,22 @@ int main(void)
 {
 	prvSetupHardware();
 
-	/* LED1 toggle thread */
-	xTaskCreate(vLEDTask1, (signed char *) "vTaskLed1",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
+    FRESULT fr;
+    FATFS fs;
+    FIL fil;
 
-	/* LED2 toggle thread */
-	xTaskCreate(vLEDTask2, (signed char *) "vTaskLed2",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
+    /* Open or create a log file and ready to append */
+    fr = f_mount(&fs, "", 0);
+    fr = open_append(&fil, "logfile3.txt");
+    if (fr != FR_OK) return 1;
 
-	/* LED0 toggle thread */
-	xTaskCreate(vLEDTask0, (signed char *) "vTaskLed0",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
+    /* Append a line */
+    int a = f_printf(&fil, "test\n");
 
-	/* Start the scheduler */
-	vTaskStartScheduler();
+    /* Close the file */
+    f_close(&fil);
+
+	while(1) {}
 
 	/* Should never arrive here */
 	return 1;
