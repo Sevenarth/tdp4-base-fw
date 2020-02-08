@@ -83,7 +83,7 @@ int main(void)
     FRESULT fr;
     FATFS fs;
     FIL fil;
-    int written;
+    unsigned int written;
 
     /* Open or create a log file and ready to append */
     fr = f_mount(&fs, "", 0);
