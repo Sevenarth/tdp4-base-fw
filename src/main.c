@@ -83,14 +83,15 @@ int main(void)
     FRESULT fr;
     FATFS fs;
     FIL fil;
+    int written;
 
     /* Open or create a log file and ready to append */
     fr = f_mount(&fs, "", 0);
-    fr = open_append(&fil, "logfile3.txt");
+    fr = open_append(&fil, "20200208T001240Z.TXT");
     if (fr != FR_OK) return 1;
 
     /* Append a line */
-    int a = f_printf(&fil, "test\n");
+    fr = f_write(&fil, "written\n", 8, &written);
 
     /* Close the file */
     f_close(&fil);

@@ -159,6 +159,8 @@ card_type_t mmc_init() {
 
 	uint8_t n, cmd, ocr[4], timeout;
 
+	// TODO: wait at least 1ms to allow the SD card to boot up
+
 	/* initialise the MMC card into SPI mode by sending 80 clks on */
 	/* Use MMCRDData as a temporary buffer for SPI_Send() */
 	ssp_read(10);
