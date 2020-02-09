@@ -3,6 +3,7 @@
 #include "task.h"
 #include <stdlib.h>
 #include "LSM9DS1.h"
+#include "ff.h"
 
 /*****************************************************************************
  * Private types/enumerations/variables
@@ -27,7 +28,7 @@ static int data_available = 0, buff_head = 0, buff_tail = 0, buff_full = 0;
 static void prvSetupHardware(void)
 {
 	SystemCoreClockUpdate();
-	Board_Init();
+	Chip_GPIO_Init(LPC_GPIO);
 	Init_I2C();
 }
 
@@ -75,6 +76,23 @@ static portTASK_FUNCTION(pushSensorData, pvParameters) {
 /*****************************************************************************
  * Public functions
  ****************************************************************************/
+FRESULT open_append (
+    FIL* fp,            /* [OUT] File object to create */
+    const char* path    /* [IN]  File name to be opened */
+)
+{
+    FRESULT fr;
+
+    /* Opens an existing file. If not exist, creates a new file. */
+    fr = f_open(fp, path, FA_WRITE | FA_OPEN_ALWAYS);
+    if (fr == FR_OK) {
+        /* Seek to end of the file to append data */
+        fr = f_lseek(fp, f_size(fp));
+        if (fr != FR_OK)
+            f_close(fp);
+    }
+    return fr;
+}
 
 /**
  * @brief	main routine for FreeRTOS blinky example
@@ -109,6 +127,24 @@ int main(void)
 	xTaskCreate(pushSensorData, "push", 103, NULL, (tskIDLE_PRIORITY + 1UL), NULL);
 
 	vTaskStartScheduler();
+
+    FRESULT fr;
+    FATFS fs;
+    FIL fil;
+    unsigned int written;
+
+    /* Open or create a log file and ready to append */
+    fr = f_mount(&fs, "", 0);
+    fr = open_append(&fil, "20200208T001240Z.TXT");
+    if (fr != FR_OK) return 1;
+
+    /* Append a line */
+    fr = f_write(&fil, "written\n", 8, &written);
+
+    /* Close the file */
+    f_close(&fil);
+
+	while(1) {}
 
 	Deinit_I2C();
 
