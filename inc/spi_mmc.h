@@ -18,7 +18,7 @@
 #define MMC_CS_PIN    7
 #define MMC_CS_IOCON  IOCON_PIO0_7
 
-#define FAST_BITRATE 1000000 // 1Mbps
+#define FAST_BITRATE 500000 // 1Mbps
 
 /* The SPI data is 8 bit long, the MMC use 48 bits, 6 bytes */
 #define MMC_CMD_SIZE 6
