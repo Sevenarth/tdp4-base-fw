@@ -272,7 +272,7 @@ typedef struct g_state {
 	int pitch, roll, yaw;
 } g_state_t;
 
-g_state_t *LSM9DS1_Get_G_Output();
+int LSM9DS1_Get_G_Output(g_state_t *);
 
 // G+XL control register
 #define CTRL_REG4			0x1E
@@ -400,7 +400,7 @@ int LSM9DS1_Reset_FIFO();
 #define OUT_Z_L_XL			0x2C
 #define OUT_Z_H_XL			0x2D
 
-axes_state_t *LSM9DS1_Get_XL_Output();
+int LSM9DS1_Get_XL_Output(axes_state_t *);
 
 #define FIFO_CTRL			0x2E /* FIFO control register */
 
@@ -563,7 +563,7 @@ int LSM9DS1_Set_M_Z_Operative_Mode(OPERATIVE_MODE_T);
 #define OUT_Z_L_M			0x2C
 #define OUT_Z_H_M			0x2D
 
-axes_state_t *LSM9DS1_Get_M_Output();
+int LSM9DS1_Get_M_Output(axes_state_t *);
 
 #define INT_CFG_M			0x30
 #define INT_SRC_M			0x31

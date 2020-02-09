@@ -108,47 +108,43 @@ void set_m_divider(M_FS_T fs) {
 	}
 }
 
-int16_t *LSM9DS1_Get_Axes_Raw_Output(byte_t addr, byte_t start_reg, int auto_increment) {
-	// TODO: must free!!
-	int16_t *axes = (int16_t *) malloc(sizeof(int16_t)*3);
-	axes[0] = 0x8000;
-	axes[1] = 0x8000;
-	axes[2] = 0x8000;
+int LSM9DS1_Get_Axes_Raw_Output(byte_t addr, byte_t start_reg, int auto_increment, int16_t *buffer) {
+	int k = 0, i;
 
 	if(auto_increment) { // auto increment turned on
 		byte_t bytes[] = {0, 0, 0, 0, 0, 0};
 		byte_str_t byteStr = {6, bytes};
 		if(I2C_Cmd_Read_Bytes(addr, start_reg, &byteStr) == 6) {
-			axes[0] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
-			axes[1] = byteStr.bytes[2] | (byteStr.bytes[3] << 8);
-			axes[2] = byteStr.bytes[4] | (byteStr.bytes[5] << 8);
+			buffer[0] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
+			buffer[1] = byteStr.bytes[2] | (byteStr.bytes[3] << 8);
+			buffer[2] = byteStr.bytes[4] | (byteStr.bytes[5] << 8);
+			k = 3;
 		}
 	} else {
 		byte_t bytes[] = {0, 0};
 		byte_str_t byteStr = {2, bytes};
-		for(int i = 0; i < 3; i++) {
+		for(i = 0; i < 3; i++) {
 			if(I2C_Cmd_Read_Bytes(addr, start_reg+(2*i), &byteStr) & 2) {
-				axes[i] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
+				buffer[i] = byteStr.bytes[0] | (byteStr.bytes[1] << 8);
+				k++;
 			}
 		}
 	}
 
-	return axes;
+	return k;
 }
 
-axes_state_t *LSM9DS1_Get_Axes_Output(byte_t addr, byte_t start_reg, int auto_increment, int sensitivity_divider) {
-	int16_t *raw_data = LSM9DS1_Get_Axes_Raw_Output(addr, start_reg, auto_increment);
+int LSM9DS1_Get_Axes_Output(byte_t addr, byte_t start_reg, int auto_increment, int sensitivity_divider, axes_state_t *out) {
+	int16_t buff16[] = {0, 0, 0};
+	int read_bytes = LSM9DS1_Get_Axes_Raw_Output(addr, start_reg, auto_increment, buff16);
 
 	// We need to remodel the data from 16 bits to 32 bits, in order
 	// to provide a higher accuracy using a smaller scale (milli/10e-3)
-	axes_state_t *data = (axes_state_t *) malloc(sizeof(axes_state_t));
-	data->x = raw_data[0]*1000/sensitivity_divider;
-	data->y = raw_data[1]*1000/sensitivity_divider;
-	data->z = raw_data[2]*1000/sensitivity_divider;
+	out->x = buff16[0]*1000/sensitivity_divider;
+	out->y = buff16[1]*1000/sensitivity_divider;
+	out->z = buff16[2]*1000/sensitivity_divider;
 
-	free(raw_data);
-
-	return data;
+	return read_bytes;
 }
 
 int LSM9DS1_Write_Register(byte_t addr, byte_t reg, byte_t value) {
@@ -327,21 +323,21 @@ int16_t LSM9DS1_Get_AG_Temperature() {
 	return 0x8000; // output lowest negative number as error
 }
 
-g_state_t *LSM9DS1_Get_G_Output() {
-	return (g_state_t *) LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4, gDiv);
+int LSM9DS1_Get_G_Output(g_state_t *data) {
+	return LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4, gDiv, (axes_state_t *) data);
 }
 
-axes_state_t *LSM9DS1_Get_XL_Output() {
-	return LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_XL, LSM9DS1_AG[CTRL_REG8] & 4, xlDiv);
+int LSM9DS1_Get_XL_Output(axes_state_t *data) {
+	return LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_XL, LSM9DS1_AG[CTRL_REG8] & 4, xlDiv, data);
 }
 
-axes_state_t *LSM9DS1_Get_M_Output() {
+int LSM9DS1_Get_M_Output(axes_state_t *data) {
 	/* TODO:
 	 *   Verify that the auto increment actually works!
 	 *   Otherwise the MSB of the sub-address must be 1 to enable it.
 	 *
 	 */
-	return LSM9DS1_Get_Axes_Output(LSM9DS1_M_ADDR, OUT_X_L_M, 1, mDiv);
+	return LSM9DS1_Get_Axes_Output(LSM9DS1_M_ADDR, OUT_X_L_M, 1, mDiv, data);
 }
 
 
