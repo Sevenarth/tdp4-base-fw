@@ -323,8 +323,8 @@ int16_t LSM9DS1_Get_AG_Temperature() {
 	return 0x8000; // output lowest negative number as error
 }
 
-int LSM9DS1_Get_G_Output(g_state_t *data) {
-	return LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4, gDiv, (axes_state_t *) data);
+int LSM9DS1_Get_G_Output(axes_state_t *data) {
+	return LSM9DS1_Get_Axes_Output(LSM9DS1_AG_ADDR, OUT_X_L_G, LSM9DS1_AG[CTRL_REG8] & 4, gDiv, data);
 }
 
 int LSM9DS1_Get_XL_Output(axes_state_t *data) {

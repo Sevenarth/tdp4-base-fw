@@ -272,7 +272,7 @@ typedef struct g_state {
 	int pitch, roll, yaw;
 } g_state_t;
 
-int LSM9DS1_Get_G_Output(g_state_t *);
+int LSM9DS1_Get_G_Output(axes_state_t *);
 
 // G+XL control register
 #define CTRL_REG4			0x1E

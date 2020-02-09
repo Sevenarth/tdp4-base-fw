@@ -29,8 +29,6 @@
  * this code.
  */
 
-#include "FreeRTOS.h"
-#include "task.h"
 #include "FreeRTOSCommonHooks.h"
 
 #include "chip.h"
@@ -76,7 +74,7 @@ void vApplicationIdleHook(void)
 }
 
 /* FreeRTOS stack overflow hook */
-void vApplicationStackOverflowHook(xTaskHandle pxTask, signed char *pcTaskName)
+void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName)
 {
 	(void) pxTask;
 	(void) pcTaskName;

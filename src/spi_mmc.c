@@ -10,6 +10,7 @@
 
 #define IOCON_GPIO (IOCON_FUNC0 | IOCON_MODE_PULLUP | IOCON_INV_EN | IOCON_DIGMODE_EN)
 #include "spi_mmc.h"
+#include "FreeRTOSCommonHooks.h"
 
 static uint8_t tx_buffer[MMC_DATA_SIZE];
 static uint8_t rx_buffer[MMC_DATA_SIZE];
@@ -160,6 +161,7 @@ card_type_t mmc_init() {
 	uint8_t n, cmd, ocr[4], timeout;
 
 	// TODO: wait at least 1ms to allow the SD card to boot up
+	//FreeRTOSDelay(1);
 
 	/* initialise the MMC card into SPI mode by sending 80 clks on */
 	/* Use MMCRDData as a temporary buffer for SPI_Send() */

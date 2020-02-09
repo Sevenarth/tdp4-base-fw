@@ -15,8 +15,8 @@
 /* Ports configuration */
 #define LPC_SSP       LPC_SSP0
 #define MMC_CS_PORT   0
-#define MMC_CS_PIN    7
-#define MMC_CS_IOCON  IOCON_PIO0_7
+#define MMC_CS_PIN    2
+#define MMC_CS_IOCON  IOCON_PIO0_2
 
 #define FAST_BITRATE 500000 // 1Mbps
 

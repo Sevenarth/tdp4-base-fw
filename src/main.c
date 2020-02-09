@@ -1,19 +1,24 @@
+#include <stdlib.h>
 #include "board.h"
+
 #include "FreeRTOS.h"
 #include "task.h"
-#include <stdlib.h>
+#include "stream_buffer.h"
+
 #include "LSM9DS1.h"
+
 #include "ff.h"
 
 /*****************************************************************************
  * Private types/enumerations/variables
  ****************************************************************************/
 
-#define RING_BUFFER_SZ 64
+static TaskHandle_t pushTask, pullTask;
 
-static axes_state_t xl_buff[RING_BUFFER_SZ];
-static g_state_t g_buff[RING_BUFFER_SZ];
-static int data_available = 0, buff_head = 0, buff_tail = 0, buff_full = 0;
+#define STREAM_BUFFER_SZ 64
+StreamBufferHandle_t xStreamBuffer;
+const size_t xTriggerLevel = 32;
+
 
 FRESULT fr;
 FATFS fs;
@@ -37,69 +42,73 @@ static void prvSetupHardware(void)
 	Init_I2C();
 }
 
+
 void PIOINT0_IRQHandler() {
-	if(LPC_GPIO[0].MIS & 8) { // Interrupt on PIO0_3 triggered
-		data_available = 1;
-		LPC_GPIO[0].IC |= 8; // Clear edge-sensitive interrupt
+	BaseType_t xHigherPriorityTaskWoken = pdTRUE;
+	if(LPC_GPIO[0].MIS & (1 << 7)) { // Interrupt on PIO0_7 triggered
+		vTaskNotifyGiveFromISR(pullTask, &xHigherPriorityTaskWoken);
+		LPC_GPIO[0].IC |= 1 << 7; // Clear edge-sensitive interrupt
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
 }
+
+static volatile byte_t fifo_status;
+
+#define SENSOR_OUT_SZ 2
 
 static portTASK_FUNCTION(pullSensorData, pvParameters) {
 	int i;
+	axes_state_t sensor_out[SENSOR_OUT_SZ];
+
 	while(1) {
-		if(data_available) {
-			for(i = 0; i < 32; i++) {
-				while(buff_full) {}
+		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-				LSM9DS1_Get_G_Output(&g_buff[buff_head]);
-				LSM9DS1_Get_XL_Output(&xl_buff[buff_head]);
+		for(i = 0; i < 32; i++) {
+			LSM9DS1_Get_G_Output(&sensor_out[0]);
+			LSM9DS1_Get_XL_Output(&sensor_out[1]);
 
-				buff_head = (buff_head + 1) % RING_BUFFER_SZ;
-				buff_full = (buff_head == buff_tail);
-			}
-
-			data_available = 0;
+			xStreamBufferSend(xStreamBuffer, sensor_out, sizeof(axes_state_t)*SENSOR_OUT_SZ, portMAX_DELAY);
 		}
+
+		fifo_status = LSM9DS1_Read_Register(LSM9DS1_AG_ADDR, FIFO_SRC);
 	}
 }
 
-static uint8_t write_buff[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+#define WRITE_BUFFER_SZ (4 * 3 /* 4 bytes * 3 axes */ + 1 /* start_byte */)
 
 static portTASK_FUNCTION(pushSensorData, pvParameters) {
-	while(1) {
-		if(buff_full || buff_head != buff_tail) {
-			write_buff[0] = 1; //1 for gyroscope
-			write_buff[1] = g_buff[buff_tail].pitch >> 24;
-			write_buff[2] = g_buff[buff_tail].pitch >> 16;
-			write_buff[3] = g_buff[buff_tail].pitch >> 8;
-			write_buff[4] = g_buff[buff_tail].pitch;
-			write_buff[5] = g_buff[buff_tail].roll >> 24;
-			write_buff[6] = g_buff[buff_tail].roll >> 16;
-			write_buff[7] = g_buff[buff_tail].roll >> 8;
-			write_buff[8] = g_buff[buff_tail].roll;
-			write_buff[9] = g_buff[buff_tail].yaw >> 24;
-			write_buff[10] = g_buff[buff_tail].yaw >> 16;
-			write_buff[11] = g_buff[buff_tail].yaw >> 8;
-			write_buff[12] = g_buff[buff_tail].yaw;
-    		fr = f_write(&fil, write_buff, 13, &written);
-			
-			write_buff[0] = 2; // 2 for accelerometer
-			write_buff[1] = xl_buff[buff_tail].x >> 24;
-			write_buff[2] = xl_buff[buff_tail].x >> 16;
-			write_buff[3] = xl_buff[buff_tail].x >> 8;
-			write_buff[4] = xl_buff[buff_tail].x;
-			write_buff[5] = xl_buff[buff_tail].y >> 24;
-			write_buff[6] = xl_buff[buff_tail].y >> 16;
-			write_buff[7] = xl_buff[buff_tail].y >> 8;
-			write_buff[8] = xl_buff[buff_tail].y;
-			write_buff[9] = xl_buff[buff_tail].z >> 24;
-			write_buff[10] = xl_buff[buff_tail].z >> 16;
-			write_buff[11] = xl_buff[buff_tail].z >> 8;
-			write_buff[12] = xl_buff[buff_tail].z;
-    		fr = f_write(&fil, write_buff, 13, &written);
+	size_t recv_sz;
+	axes_state_t sensor_out[SENSOR_OUT_SZ];
+	uint8_t write_buff[WRITE_BUFFER_SZ];
+	int i;
 
-			buff_tail = (buff_tail + 1) % RING_BUFFER_SZ;
-			buff_full = 0;
+	while(1) {
+		recv_sz = xStreamBufferReceive(xStreamBuffer, sensor_out, sizeof(axes_state_t)*SENSOR_OUT_SZ, portMAX_DELAY);
+
+		if(recv_sz > 0) {
+			for(i = 0; i < SENSOR_OUT_SZ; i++) {
+				write_buff[0] = i;
+				write_buff[1] = sensor_out[i].x >> 24;
+				write_buff[2] = sensor_out[i].x >> 16;
+				write_buff[3] = sensor_out[i].x >> 8;
+				write_buff[4] = sensor_out[i].x;
+				write_buff[5] = sensor_out[i].y >> 24;
+				write_buff[6] = sensor_out[i].y >> 16;
+				write_buff[7] = sensor_out[i].y >> 8;
+				write_buff[8] = sensor_out[i].y;
+				write_buff[9] = sensor_out[i].z >> 24;
+				write_buff[10] = sensor_out[i].z >> 16;
+				write_buff[11] = sensor_out[i].z >> 8;
+				write_buff[12] = sensor_out[i].z;
+
+				taskENTER_CRITICAL();
+				fr = f_write(&fil, write_buff, 13, &written);
+				taskEXIT_CRITICAL();
+			}
+
+			taskENTER_CRITICAL();
+			fr = f_sync(&fil);
+			taskEXIT_CRITICAL();
 		}
 	}
 }
@@ -133,18 +142,19 @@ int main(void)
 {
 	prvSetupHardware();
 
+
     /* Open or create a log file and ready to append */
     fr = f_mount(&fs, "", 0);
     fr = open_append(&fil, "20200208T001240Z.DAT");
     if (fr != FR_OK) return 1;
 
-	LPC_IOCON->REG[IOCON_PIO0_3] = IOCON_FUNC0 | IOCON_MODE_PULLDOWN; // Set PIO0_3 to GPIO with pull-down resistor
-	LPC_GPIO[0].DIR &= 0xFFFFFFF7; // Set PIO0_3 to input
-	LPC_GPIO[0].IS  &= 0xFFFFFFF7; // Set edge-sensitive interrupt on PIO0_3
-	LPC_GPIO[0].IBE &= 0xFFFFFFF7; // Set single edge interrupt on PIO0_3
-	LPC_GPIO[0].IEV |= 8;          // Set rising edge interrupt on PIO0_3
-	LPC_GPIO[0].IE  |= 8;          // Enable interrupt on PIO0_3
-	LPC_GPIO[0].IC |= 8;
+	LPC_IOCON->REG[IOCON_PIO0_7] = IOCON_FUNC0 | IOCON_MODE_PULLDOWN; // Set PIO0_3 to GPIO with pull-down resistor
+	LPC_GPIO[0].DIR &= ~(1 << 7); // Set PIO0_3 to input
+	LPC_GPIO[0].IS  &= ~(1 << 7); // Set edge-sensitive interrupt on PIO0_3
+	LPC_GPIO[0].IBE &= ~(1 << 7); // Set single edge interrupt on PIO0_3
+	LPC_GPIO[0].IEV |= 1 << 7;          // Set rising edge interrupt on PIO0_3
+	LPC_GPIO[0].IE  |= 1 << 7;          // Enable interrupt on PIO0_3
+	LPC_GPIO[0].IC |= 1 << 7;
 
 	LSM9DS1_Init();
 	LSM9DS1_Set_AG_Interrupt1(INT1_FSS5);
@@ -159,8 +169,10 @@ int main(void)
 
 	NVIC_EnableIRQ(EINT0_IRQn); // Enable external interrupts on Port 0
 
-	xTaskCreate(pullSensorData, "pull", 92, NULL, (tskIDLE_PRIORITY + 1UL), NULL);
-	xTaskCreate(pushSensorData, "push", 130, NULL, (tskIDLE_PRIORITY + 1UL), NULL);
+	xTaskCreate(pullSensorData, "pull", 100, NULL, (tskIDLE_PRIORITY + 2UL), &pullTask);
+	xTaskCreate(pushSensorData, "push", 175, NULL, (tskIDLE_PRIORITY + 1UL), &pushTask);
+
+    xStreamBuffer = xStreamBufferCreate(STREAM_BUFFER_SZ*sizeof(axes_state_t), xTriggerLevel);
 
 	vTaskStartScheduler();
 
