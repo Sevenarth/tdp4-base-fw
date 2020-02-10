@@ -50,13 +50,15 @@ int32_t ssp_read(uint32_t buffer_len) {
 
 static uint8_t wait_ready(void)
 {
-	uint8_t timeout = MAX_TIMEOUT;
+	uint32_t timeout = 0xfffff;
 
 	ssp_recv();
 
 	do {
 		ssp_recv();
 	} while (*rx_buffer != 0xFF && timeout--);
+
+	configASSERT(*rx_buffer == 0xFF && timeout);
 
 	return *rx_buffer;
 }
@@ -78,7 +80,8 @@ static uint8_t card_select() {
 }
 
 uint8_t mmc_send_cmd(mmc_cmd_t cmd, uint32_t arg) {
-	uint8_t n, res;
+	uint8_t res;
+	uint16_t n;
 
 	if (cmd & 0x80) { /* ACMD<n> is the command sequence of CMD55-CMD<n> */
 		cmd &= 0x7F;
@@ -105,7 +108,7 @@ uint8_t mmc_send_cmd(mmc_cmd_t cmd, uint32_t arg) {
 
 	if(cmd == CMD12) ssp_recv(); // skip a byte
 
-	n = 10;
+	n = MAX_TIMEOUT;
 	do ssp_recv(); while ((*rx_buffer & 0x80) && --n);
 
 	return *rx_buffer;
@@ -116,13 +119,9 @@ static int mmc_read_datablock (
 	unsigned int btr		/* Byte count (must be multiple of 4) */
 )
 {
-	uint8_t token, timeout = 128;
-	do {
-		ssp_recv();
-		token = *rx_buffer;
-	} while ((token == 0xFF) && timeout--);
+	do ssp_recv(); while (*rx_buffer == 0xFF);
 
-	if(token != 0xFE) return 0;	/* If not valid data token, return with error */
+	configASSERT(*rx_buffer == 0xFE);	/* If not valid data token, return with error */
 
 	do {							/* Receive the data block into buffer */
 		Chip_SSP_ReadFrames_Blocking(LPC_SSP, buff, 4);
@@ -140,7 +139,7 @@ static int mmc_write_datablock (
 	uint8_t token			/* Data/Stop token */
 )
 {
-	if (wait_ready() != 0xFF) return 0;
+	configASSERT(wait_ready() == 0xFF);
 
 	*tx_buffer = token;
 	ssp_send(1);					/* Xmit data token */
@@ -153,8 +152,7 @@ static int mmc_write_datablock (
 		ssp_send(2);					/* CRC (Dummy) */
 
 		ssp_recv();				/* Reveive data response */
-		if ((*rx_buffer & 0x1F) != 0x05)		/* If not accepted, return with error */
-			return 0;
+		configASSERT((*rx_buffer & 0x1F) == 0x05);		/* If not accepted, return with error */
 	}
 
 	return 1;
@@ -194,6 +192,8 @@ card_type_t mmc_init() {
 
 					card_type = (ocr[0] & 0x40) ? CT_SD2 | CT_BLOCK : CT_SD2;	/* SDv2 */
 				}
+
+				configASSERT(timeout);
 			}
 		} else { /* SDSC or MMC */
 			if (mmc_send_cmd(ACMD41, 0) <= 1) 	{
@@ -207,10 +207,14 @@ card_type_t mmc_init() {
 			while (timeout-- && mmc_send_cmd(cmd, 0));       /* Wait for leaving idle state */
 			if (!timeout || mmc_send_cmd(CMD16, 512) != 0)   /* Set R/W block length to 512 */
 				card_type = 0;
+
+			configASSERT(timeout);
 		}
 	}
 
 	card_deselect();
+
+	configASSERT(card_type);
 
 	if(card_type) {
 		Chip_SSP_SetBitRate(LPC_SSP, FAST_BITRATE);
@@ -332,10 +336,11 @@ int mmc_get_block_size(uint32_t *buffer) {
 	}
 
 	card_deselect();
+	configASSERT(success);
 	return success;
 }
 
-int mmc_get_status(uint32_t *buffer) {
+int mmc_get_status(uint8_t *buffer) {
 	int success = 0;
 
 	if (mmc_send_cmd(ACMD13, 0) == 0) {	/* SD_STATUS */
@@ -345,10 +350,11 @@ int mmc_get_status(uint32_t *buffer) {
 	}
 
 	card_deselect();
+	configASSERT(success);
 	return success;
 }
 
-int mmc_get_ocr(uint32_t *buffer) {
+int mmc_get_ocr(uint8_t *buffer) {
 	int success = 0, n;
 	if (mmc_send_cmd(CMD58, 0) == 0) {	/* READ_OCR */
 		for (n = 4; n; n--) {
@@ -359,10 +365,11 @@ int mmc_get_ocr(uint32_t *buffer) {
 	}
 
 	card_deselect();
+	configASSERT(success);
 	return success;
 }
 
-int mmc_get_cid(uint32_t *buffer) {
+int mmc_get_cid(uint8_t *buffer) {
 	int success = 0;
 
 	if (mmc_send_cmd(CMD10, 0) == 0		/* READ_CID */
@@ -370,10 +377,11 @@ int mmc_get_cid(uint32_t *buffer) {
 				success = 1;
 
 	card_deselect();
+	configASSERT(success);
 	return success;
 }
 
-int mmc_get_csd(uint32_t *buffer) {
+int mmc_get_csd(uint8_t *buffer) {
 	int success = 0;
 
 	if (mmc_send_cmd(CMD9, 0) == 0		/* READ_CSD */
@@ -381,5 +389,6 @@ int mmc_get_csd(uint32_t *buffer) {
 				success = 1;
 
 	card_deselect();
+	configASSERT(success);
 	return success;
 }

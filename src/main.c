@@ -158,7 +158,7 @@ int main(void)
 
 	LSM9DS1_Init();
 	LSM9DS1_Set_AG_Interrupt1(INT1_FSS5);
-	LSM9DS1_Set_AG_Reg1(G_ODR_60, G_FS_2000, G_BW_0);
+	LSM9DS1_Set_AG_Reg1(G_ODR_952, G_FS_2000, G_BW_0);
 	LSM9DS1_Set_AG_Reg6(XL_ODR_952, XL_FS_16, 0, 0);
 
 	LSM9DS1_Set_M_Operating_Mode(SINGLE_CONVERSION_MODE);

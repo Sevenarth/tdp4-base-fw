@@ -18,7 +18,7 @@
 #define MMC_CS_PIN    2
 #define MMC_CS_IOCON  IOCON_PIO0_2
 
-#define FAST_BITRATE 500000 // 500Kbps
+#define FAST_BITRATE 10000000 // 10Mbps
 
 /* The SPI data is 8 bit long, the MMC use 48 bits, 6 bytes */
 #define MMC_CMD_SIZE 6
@@ -26,7 +26,7 @@
 /* The max MMC flash size is 256MB */
 #define MMC_DATA_SIZE 512 /* 16-bit in size, 512 bytes */
 
-#define MAX_TIMEOUT 0xFF
+#define MAX_TIMEOUT 0x200
 
 /* Card type flags (CardType) */
 typedef enum card_type {
@@ -66,9 +66,9 @@ uint8_t mmc_write_multiple_blocks(uint32_t, uint8_t *, unsigned int);
 int mmc_sync();
 int mmc_get_sector_count(uint32_t *);
 int mmc_get_block_size(uint32_t *);
-int mmc_get_status(uint32_t *);
-int mmc_get_ocr(uint32_t *);
-int mmc_get_cid(uint32_t *);
-int mmc_get_csd(uint32_t *);
+int mmc_get_status(uint8_t *);
+int mmc_get_ocr(uint8_t *);
+int mmc_get_cid(uint8_t *);
+int mmc_get_csd(uint8_t *);
 
 #endif /* INC_SPI_MMC_H_ */
