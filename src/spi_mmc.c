@@ -33,11 +33,17 @@ void ssp_init() {
 }
 
 int32_t ssp_send(uint32_t buffer_len) {
-	return Chip_SSP_WriteFrames_Blocking(LPC_SSP, tx_buffer, buffer_len);
+	__disable_irq();
+	int32_t ret = Chip_SSP_WriteFrames_Blocking(LPC_SSP, tx_buffer, buffer_len);
+	__enable_irq();
+	return ret;
 }
 
 int32_t ssp_read(uint32_t buffer_len) {
-	return Chip_SSP_ReadFrames_Blocking(LPC_SSP, rx_buffer, buffer_len);
+	__disable_irq();
+	int32_t ret = Chip_SSP_ReadFrames_Blocking(LPC_SSP, rx_buffer, buffer_len);
+	__enable_irq();
+	return ret;
 }
 
 #define ssp_recv() ssp_read(1)
@@ -110,7 +116,7 @@ static int mmc_read_datablock (
 	unsigned int btr		/* Byte count (must be multiple of 4) */
 )
 {
-	uint8_t token, timeout = 20;
+	uint8_t token, timeout = 128;
 	do {
 		ssp_recv();
 		token = *rx_buffer;

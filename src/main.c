@@ -24,6 +24,7 @@ FRESULT fr;
 FATFS fs;
 FIL fil;
 unsigned int written;
+static unsigned int total_written = 0, meant_written = 0;
 
 /*****************************************************************************
  * Public types/enumerations/variables
@@ -70,11 +71,12 @@ static portTASK_FUNCTION(pullSensorData, pvParameters) {
 			xStreamBufferSend(xStreamBuffer, sensor_out, sizeof(axes_state_t)*SENSOR_OUT_SZ, portMAX_DELAY);
 		}
 
-		fifo_status = LSM9DS1_Read_Register(LSM9DS1_AG_ADDR, FIFO_SRC);
+		LSM9DS1_Reset_FIFO();
 	}
 }
 
 #define WRITE_BUFFER_SZ (4 * 3 /* 4 bytes * 3 axes */ + 1 /* start_byte */)
+static volatile size_t buffer_bytes;
 
 static portTASK_FUNCTION(pushSensorData, pvParameters) {
 	size_t recv_sz;
@@ -84,6 +86,7 @@ static portTASK_FUNCTION(pushSensorData, pvParameters) {
 
 	while(1) {
 		recv_sz = xStreamBufferReceive(xStreamBuffer, sensor_out, sizeof(axes_state_t)*SENSOR_OUT_SZ, portMAX_DELAY);
+		buffer_bytes = xStreamBufferBytesAvailable(xStreamBuffer);
 
 		if(recv_sz > 0) {
 			for(i = 0; i < SENSOR_OUT_SZ; i++) {
@@ -101,14 +104,11 @@ static portTASK_FUNCTION(pushSensorData, pvParameters) {
 				write_buff[11] = sensor_out[i].z >> 8;
 				write_buff[12] = sensor_out[i].z;
 
-				taskENTER_CRITICAL();
 				fr = f_write(&fil, write_buff, 13, &written);
-				taskEXIT_CRITICAL();
+				configASSERT(fr == FR_OK && written == 13);
 			}
 
-			taskENTER_CRITICAL();
 			fr = f_sync(&fil);
-			taskEXIT_CRITICAL();
 		}
 	}
 }
@@ -158,7 +158,7 @@ int main(void)
 
 	LSM9DS1_Init();
 	LSM9DS1_Set_AG_Interrupt1(INT1_FSS5);
-	LSM9DS1_Set_AG_Reg1(G_ODR_15, G_FS_2000, G_BW_0);
+	LSM9DS1_Set_AG_Reg1(G_ODR_60, G_FS_2000, G_BW_0);
 	LSM9DS1_Set_AG_Reg6(XL_ODR_952, XL_FS_16, 0, 0);
 
 	LSM9DS1_Set_M_Operating_Mode(SINGLE_CONVERSION_MODE);
