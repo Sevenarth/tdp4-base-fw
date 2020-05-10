@@ -201,8 +201,6 @@ void CAN_IRQHandler(void) {
  * Public functions
  ****************************************************************************/
 
-volatile uint32_t *CAN_CNTL = 0x40050000;
-volatile uint32_t *CAN_TEST = 0x40050014;
 
 /**
  * @brief	Main routine for CCAN_ROM example
