@@ -32,6 +32,9 @@
 #ifndef __FREERTOSCOMMONHOOKS_H_
 #define __FREERTOSCOMMONHOOKS_H_
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 /** @ingroup FreeRTOS_COMMON
  * @{
  */
@@ -65,7 +68,7 @@ void vApplicationIdleHook(void);
  * @return	Nothing
  * @note	This function is alled when a stack overflow occurs.
  */
-void vApplicationStackOverflowHook(xTaskHandle pxTask, signed char *pcTaskName);
+void vApplicationStackOverflowHook(TaskHandle_t pxTask, signed char *pcTaskName);
 
 /**
  * @brief	FreeRTOS application tick hook

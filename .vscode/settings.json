@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "lsm9ds1.h": "c",
+        "stream_buffer.h": "c"
+    }
+}

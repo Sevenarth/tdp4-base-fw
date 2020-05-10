@@ -108,8 +108,8 @@ static void Board_LED_Init(void)
 	Chip_GPIO_SetPinDIROutput(LPC_GPIO, 0, 7);
 	Chip_GPIO_SetPinDIROutput(LPC_GPIO, 0, 8);
 	Chip_GPIO_SetPinDIROutput(LPC_GPIO, 0, 9);
-	Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO0_8, IOCON_GPIO_PULLUP);
-	Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO0_9, IOCON_GPIO_PULLUP);
+	//Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO0_8, IOCON_GPIO_PULLUP);
+	//Chip_IOCON_PinMuxSet(LPC_IOCON, IOCON_PIO0_9, IOCON_GPIO_PULLUP);
 }
 
 /* Sets the state of a board LED to on or off */
