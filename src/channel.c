@@ -49,7 +49,7 @@ void enableLoopbackMode() {
 void send32bitValue(uint32_t mode_id, uint32_t val) {
 	tx_msg_obj.mode_id = mode_id;
 	tx_msg_obj.dlc = 4;
-	tx_msg_obj.data[0] = (uint8_t) val;
+	tx_msg_obj.data[0] = (uint8_t)(val);
 	tx_msg_obj.data[1] = (uint8_t)(val >> 8);
 	tx_msg_obj.data[2] = (uint8_t)(val >> 16);
 	tx_msg_obj.data[3] = (uint8_t)(val >> 24);
@@ -67,26 +67,10 @@ void CAN_IRQHandler(void) {
 }
 
 void CAN_rx(uint8_t msg_obj_num) {
-	/* Determine which CAN message has been received */
-	msg_obj.msgobj = msg_obj_num;
-	/* Now load up the msg_obj structure with the CAN message */
-	LPC_CCAN_API->can_receive(&msg_obj);
-	if (msg_obj_num == 1 || msg_obj_num == 2) {
-		/* Simply transmit CAN frame (echo) with with ID +0x100 via buffer 2 */
-		DEBUGOUT("Received message from %x: %x%x%x%x%x%x%x%x (dlc %u)\n",
-				msg_obj.mode_id,
-				msg_obj.data[0],
-				msg_obj.data[1],
-				msg_obj.data[2],
-				msg_obj.data[3],
-				msg_obj.data[4],
-				msg_obj.data[5],
-				msg_obj.data[6],
-				msg_obj.data[7],
-				msg_obj.dlc);
-
-		msg_obj.mode_id += 0x100;
-		LPC_CCAN_API->can_transmit(&msg_obj);
+	rx_msg_obj.msgobj = msg_obj_num;
+	LPC_CCAN_API->can_receive(&rx_msg_obj);
+	if (msg_obj_num == 1) {
+		// TODO: handle received message!
 	}
 }
 
