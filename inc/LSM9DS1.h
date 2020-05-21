@@ -26,8 +26,15 @@ int LSM9DS1_Reset();
 int LSM9DS1_AG_Reset();
 int LSM9DS1_M_Reset();
 
+typedef enum sensor {
+	XL,
+	G,
+	M
+} sensor_t;
+
 typedef struct axes_state {
 	int x, y, z;
+	sensor_t dev;
 } axes_state_t;
 
 /****************************************

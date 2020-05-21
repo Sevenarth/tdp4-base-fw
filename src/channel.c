@@ -6,13 +6,21 @@
  * CAN bus.
  */
 #include "channel.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
 
 /**
  * Private definitions
  */
 
-CCAN_MSG_OBJ_T tx_msg_obj;
-CCAN_MSG_OBJ_T rx_msg_obj;
+int *sensor_status;
+TaskHandle_t *toggleHandle;
+
+volatile uint32_t *CAN_CNTL = (uint32_t *)0x40050000;
+volatile uint32_t *CAN_TEST = (uint32_t *)0x40050014;
+
+CCAN_MSG_OBJ_T tx_msg_obj, rx_msg_obj;
 
 // LPCOpen CAN baud rate calculator function
 void baudrateCalculate(uint32_t baud_rate, uint32_t *can_api_timing_cfg)
@@ -42,17 +50,30 @@ void baudrateCalculate(uint32_t baud_rate, uint32_t *can_api_timing_cfg)
 }
 
 void enableLoopbackMode() {
-	CAN_CNTL |= 0x80; // enable test mode
-	CAN_TEST |= 0x10; // enable loopback mode
+	*CAN_CNTL |= 0x80; // enable test mode
+	*CAN_TEST |= 0x10; // enable loopback mode
 }
 
-void send32bitValue(uint32_t mode_id, uint32_t val) {
+void chSend32BitValue(uint32_t mode_id, uint32_t val) {
 	tx_msg_obj.mode_id = mode_id;
 	tx_msg_obj.dlc = 4;
 	tx_msg_obj.data[0] = (uint8_t)(val);
 	tx_msg_obj.data[1] = (uint8_t)(val >> 8);
 	tx_msg_obj.data[2] = (uint8_t)(val >> 16);
 	tx_msg_obj.data[3] = (uint8_t)(val >> 24);
+	LPC_CCAN_API->can_transmit(&tx_msg_obj);
+}
+
+void chSend8BitValue(uint32_t mode_id, uint8_t val) {
+	tx_msg_obj.mode_id = mode_id;
+	tx_msg_obj.dlc = 1;
+	tx_msg_obj.data[0] = val;
+	LPC_CCAN_API->can_transmit(&tx_msg_obj);
+}
+
+void chSendBuffOverflow() {
+	tx_msg_obj.mode_id = 0x100;
+	tx_msg_obj.dlc = 0;
 	LPC_CCAN_API->can_transmit(&tx_msg_obj);
 }
 
@@ -67,10 +88,19 @@ void CAN_IRQHandler(void) {
 }
 
 void CAN_rx(uint8_t msg_obj_num) {
+	BaseType_t xHigherPriorityTaskWoken = pdTRUE;
 	rx_msg_obj.msgobj = msg_obj_num;
 	LPC_CCAN_API->can_receive(&rx_msg_obj);
 	if (msg_obj_num == 1) {
-		// TODO: handle received message!
+		switch (rx_msg_obj.mode_id) {
+		case 0x0:
+			chSend8BitValue(0, (uint8_t) *sensor_status);
+			break;
+		case 0x3:
+			vTaskNotifyGiveFromISR(*toggleHandle, &xHigherPriorityTaskWoken);
+			portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+			break;
+		}
 	}
 }
 
@@ -80,7 +110,10 @@ void CAN_tx(uint8_t msg_obj_num) {}
 /*	CAN error callback */
 void CAN_error(uint32_t error_info) {}
 
-void Setup_Channel() {
+void chSetup(int *sensor_status_ptr, TaskHandle_t *toggle_sampling_handle) {
+	sensor_status = sensor_status_ptr;
+	toggleHandle = toggle_sampling_handle;
+
 	uint32_t CanApiClkInitTable[2];
 
 	/* Publish CAN Callback Functions */
@@ -107,19 +140,4 @@ void Setup_Channel() {
 	rx_msg_obj.mode_id = 0x0;
 	rx_msg_obj.mask = 0xFFFC;
 	LPC_CCAN_API->config_rxmsgobj(&rx_msg_obj);
-
-	/* Enable the CAN Interrupt */
-	NVIC_EnableIRQ(CAN_IRQn);
-}
-
-void Send_XL_Data(int32_t val) {
-	send32bitValue(XL_DATA_CAN_MODE, (uint32_t)val);
-}
-
-void Send_G_Data(int32_t val) {
-	send32bitValue(G_DATA_CAN_MODE, (uint32_t)val);
-}
-
-void Send_M_Data(int32_t val) {
-	send32bitValue(M_DATA_CAN_MODE, (uint32_t)val);
 }
